@@ -1,10 +1,11 @@
 <template>
-  <div class="pm-preview-panel" :style="{ width: store.settings.previewWidth + 'px' }">
+  <div class="pm-preview-panel" :class="{ float: store.settings.previewFloat }" :style="{ width: store.settings.previewWidth + 'px' }">
     <div class="pm-right-resize-handle" :class="{ active: resize.active.value }" @mousedown="resize.onMouseDown"></div>
     <div class="pm-rp-header">
       <span>👁 Prompt Preview</span>
       <div style="display:flex;gap:4px">
         <button v-if="store.previewMode === 'blocks'" class="pm-btn icon-btn" title="Collapse/Expand all" @click="store.toggleAllPreviewBlocks()">▾</button>
+        <button class="pm-btn icon-btn" :class="{ active: store.settings.previewFloat }" title="Toggle float mode" @click="toggleFloat">📌</button>
         <button class="pm-btn close-btn" @click="store.previewOpen = false" style="padding:2px 6px">✕</button>
       </div>
     </div>
@@ -72,6 +73,11 @@ const resize = usePanelResize({
   min: 350, max: 1100, dir: 'left',
 })
 watch(() => resize.active.value, (v) => { if (!v) store.saveSettings() })
+
+function toggleFloat() {
+  store.settings.previewFloat = !store.settings.previewFloat
+  store.saveSettings()
+}
 
 function roleClass(role: string) {
   return role === 'user' ? 'pb-user' : role === 'assistant' ? 'pb-asst' : 'pb-sys'

@@ -320,8 +320,10 @@
 .st-pm .icon-btn{padding:2px 6px}
 .st-pm .icon-btn.active{color:var(--pm-ac);border-color:rgba(200,149,74,.5);background:var(--pm-ac-d)}
 
-/* Preview — always a floating overlay (drawer), never pushes the editor */
-.pm-preview-panel{position:absolute;right:0;top:0;bottom:0;background:var(--pm-bg-e);border-left:1px solid rgba(200,149,74,.25);z-index:60;display:flex;flex-direction:column;box-shadow:-8px 0 40px rgba(0,0,0,.55);overflow:hidden}
+/* Preview — embedded by default (pushes/squeezes the editor, like Var Nav), .float switches it
+   to a floating overlay drawer instead. Toggled via the 📌 button in the panel header. */
+.pm-preview-panel{background:var(--pm-bg-e);border-left:1px solid rgba(200,149,74,.25);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;position:relative}
+.pm-preview-panel.float{position:absolute;right:0;top:0;bottom:0;z-index:60;box-shadow:-8px 0 40px rgba(0,0,0,.55)}
 .st-pm .pp-tools{padding:10px 16px;border-bottom:1px solid var(--pm-border);flex-shrink:0}
 .st-pm .pp-output-wrap{flex:1;overflow:auto;padding:16px}
 .st-pm .pb-body .phl,.st-pm .pp-raw .phl{background:rgba(200,149,74,.22);color:var(--pm-ac-h);border-radius:2px;padding:0 2px}

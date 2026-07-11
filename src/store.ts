@@ -4,7 +4,7 @@ import type { PresetData, PresetBlock, OrderItem, OrderGroup, OrderNode, FlatNod
 import { DEFAULT_SETTINGS, FONT_OPTIONS } from './types'
 import * as ST from './sillytavern'
 import type { PresetListEntry } from './sillytavern'
-import { escRe, wordDiff, stripMacros } from './utils'
+import { escRe, macroAwareDiff } from './utils'
 
 export function isGroup(node: OrderNode): node is OrderGroup {
   return 'children' in node && Array.isArray((node as any).children)
@@ -743,10 +743,11 @@ export const useStore = defineStore('main', () => {
   function diffAgainstRaw(raw: string, rendered: string) {
     // No raw content to diff against at all (marker blocks etc) — nothing to highlight.
     if (!raw.trim()) return [{ text: rendered, added: false }]
-    // stripMacros: a macro's own source text (its name/args, e.g. `getvar::用户名字`) has no
-    // relationship to what it expands to, and left in, it can accidentally share characters with
-    // the substituted value and fragment the highlight (see stripMacros' doc comment in utils.ts).
-    return wordDiff(stripMacros(raw), rendered)
+    // macroAwareDiff anchors on the literal text between/around {{macros}} instead of doing a
+    // global token-level diff — see its doc comment in utils.ts for why that's necessary (the
+    // old wordDiff(stripMacros(raw), rendered) approach kept drifting by one token around
+    // repeated short tokens like spaces/`<`/`>`/list-bullet whitespace).
+    return macroAwareDiff(raw, rendered)
   }
 
   /** Per-block precise preview (方案B): each card shows the block's REAL rendered text — after

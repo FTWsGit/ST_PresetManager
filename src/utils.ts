@@ -58,11 +58,118 @@ export function stripMacros(text: string): string {
 }
 
 /**
+ * Split `text` into the literal pieces that sit between/around its top-level `{{...}}` macros,
+ * in order, with the macros themselves removed (mirrors stripMacros' own boundary detection so
+ * the two stay in lockstep). For `n` macros this returns `n + 1` pieces — any of them can be the
+ * empty string (two adjacent macros with nothing between them, or a macro flush against the very
+ * start/end of `text`). Used by macroAwareDiff below to anchor on the literal text itself instead
+ * of on individual tokens.
+ */
+function splitByMacros(text: string): string[] {
+  const pieces: string[] = []
+  let out = '', i = 0
+  while (i < text.length) {
+    if (text[i] === '{' && text[i + 1] === '{') {
+      const end = findMacroEnd(text, i)
+      if (end !== -1) { pieces.push(out); out = ''; i = end; continue }
+    }
+    out += text[i]; i++
+  }
+  pieces.push(out)
+  return pieces
+}
+
+function pushRun(out: { text: string; added: boolean }[], text: string, added: boolean) {
+  if (!text) return
+  const last = out[out.length - 1]
+  if (last && last.added === added) last.text += text
+  else out.push({ text, added })
+}
+
+/**
+ * Macro-boundary-anchored diff between `raw` (author-written block content, WITH its `{{}}`
+ * macros still in place) and `rendered` (the real ST-rendered text for that block). This is the
+ * primary entry point for precise-preview highlighting now — see wordDiff's own doc comment for
+ * the three rounds of token-level fixes it went through, all of which turned out to share one
+ * root cause that this function sidesteps entirely instead of patching further:
+ *
+ * wordDiff's patience-diff anchoring can only ever trust a token as an anchor if that exact
+ * token occurs EXACTLY ONCE in the whole block, globally. That assumption quietly breaks down on
+ * real preset blocks, which are full of short, highly-repeated tokens — a single space, a lone
+ * `-`, `<`/`>` from pseudo-XML wrapper tags repeated once per section, whitespace runs from
+ * list-item indentation repeated once per bullet. None of those can ever be trusted anchors, so
+ * whole neighborhoods of the diff fall through to plain local LCS, which is free to "borrow" a
+ * same-looking token from the wrong place nearby. Visually this showed up as the highlight
+ * boundary drifting by one token: swallowing the space before a substituted value, losing the
+ * newline+indent after it, or slicing the leading `<` off a closing tag like `</纪录方式>` — all
+ * reported independently but all the same class of bug.
+ *
+ * This function never needs global token uniqueness in the first place. We already know exactly
+ * where every macro sits in `raw` (that's what splitByMacros gives us), so `raw` decomposes into
+ * literal text segments L0, {{M0}}, L1, {{M1}}, ..., Ln — and because ST substitutes macros
+ * in-place, `rendered` is expected to look like L0, expand(M0), L1, expand(M1), ..., Ln with the
+ * Li segments carried over VERBATIM. So instead of a global bag-of-tokens comparison, we walk the
+ * Li segments in order and locate each one as an exact substring of `rendered`, searching forward
+ * from a cursor that only ever advances. A local, sequential search needs no global uniqueness
+ * guarantee at all — just "does this segment's text re-occur before the next one does", which
+ * holds even when the very same short separator (e.g. a repeated `\n - ` list bullet) appears
+ * many times in the block, because we only ever look for the NEXT occurrence after the cursor,
+ * never any occurrence anywhere. Whatever lies between two consecutive anchors is, by
+ * construction, exactly that macro's expansion — highlighted as one uninterrupted span, with no
+ * risk of a token from elsewhere in the block leaking in and punching a hole through it.
+ *
+ * Falls back to the token-level wordDiff in two cases: no macros at all in `raw` (nothing to
+ * anchor on — e.g. pure regex/extension substitution with no `{{}}` involved), or a literal
+ * segment that can't be found verbatim (a macro like `{{trim}}` ate some of its neighboring
+ * whitespace, or another plugin altered the literal text too) — retried once with the segment's
+ * own leading/trailing whitespace trimmed off before giving up and falling back to a local
+ * wordDiff for just that stretch.
+ */
+export function macroAwareDiff(raw: string, rendered: string): { text: string; added: boolean }[] {
+  const pieces = splitByMacros(raw)
+  if (pieces.length === 1) return wordDiff(raw, rendered) // no macros — nothing to anchor on
+
+  const out: { text: string; added: boolean }[] = []
+  let cursor = 0
+
+  for (const piece of pieces) {
+    if (!piece) continue // empty segment (adjacent macros, or one flush against start/end) — nothing to anchor on here
+
+    let idx = rendered.indexOf(piece, cursor)
+    let matched = piece
+    if (idx === -1) {
+      // Most common reason a literal segment doesn't survive verbatim: a macro on one of its
+      // edges (e.g. {{trim}}) consumed some of its own adjacent whitespace. Retry with that
+      // whitespace stripped before falling all the way back.
+      const trimmed = piece.trim()
+      if (trimmed && (idx = rendered.indexOf(trimmed, cursor)) !== -1) matched = trimmed
+    }
+
+    if (idx === -1) {
+      // Genuinely can't anchor this segment verbatim — fall back to the old token-level diff,
+      // scoped to just this segment against the rest of the unconsumed rendered text.
+      const local = wordDiff(piece, rendered.slice(cursor))
+      for (const seg of local) pushRun(out, seg.text, seg.added)
+      cursor = rendered.length // local wordDiff already accounted for everything remaining
+      continue
+    }
+
+    pushRun(out, rendered.slice(cursor, idx), true) // gap before this anchor = prior macro's expansion
+    pushRun(out, matched, false)
+    cursor = idx + matched.length
+  }
+
+  if (cursor < rendered.length) pushRun(out, rendered.slice(cursor), true) // trailing macro expansion, if raw ended on one
+
+  return out
+}
+
+/**
  * Word-level diff between `a` (raw, author-written block content) and `b` (the real
  * ST-rendered text for that block, after macros/regex/other extensions ran). Used to highlight
  * which parts of the rendered text are the *result* of substitution rather than literal
  * boilerplate that was already there — the ST render only gives us final text with no markers
- * of what changed, so this reconstructs an approximation via LCS on tokens.
+ * of what changed, so this reconstructs an approximation.
  *
  * Returns `b` as a sequence of {text, added} runs: `added: false` runs are tokens that matched
  * something in `a` (kept verbatim, in order); `added: true` runs are tokens present in `b` but
@@ -83,92 +190,181 @@ export function stripMacros(text: string): string {
  * shattering them into single letters), OR any other single character on its own (CJK
  * ideographs, punctuation, quotes, emoji, ...). That lets the diff align at per-character
  * resolution through CJK text while still treating Latin words as whole units.
+ *
+ * Matching strategy: plain LCS on that token stream turns out not to be enough on its own.
+ * Repeated short tokens are everywhere in this kind of text — `<`/`>` from custom pseudo-XML
+ * wrappers, CJK punctuation, quote marks — and whenever several equally-short-distance candidates
+ * exist, a plain LCS DP will happily settle on WHICHEVER maximum-length alignment it finds first,
+ * which is "valid" by the letter of longest-common-subsequence but not necessarily the one a
+ * human reading the two texts side by side would consider correct — e.g. matching a `<` deep
+ * inside one substituted value against an unrelated `<` several lines away, instead of the `<`
+ * that actually belongs to the closing tag right next to it. That shows up as a stray
+ * unhighlighted character (or a whole tag) punched out of the middle of what should read as one
+ * continuous highlighted span, or — worse — a literal, unchanged tag like `</纪录方式>` reading as
+ * partly "substituted" because its own `<` got stolen by a wrong match elsewhere.
+ *
+ * So matching is done in two tiers:
+ *  1. Patience-style anchoring (diffRange): tokens that occur EXACTLY ONCE on both sides are
+ *     unambiguous — there's only one thing they could possibly correspond to. Take the longest
+ *     increasing (order-preserving) subsequence of those as trusted sync points, then recurse on
+ *     the gaps between them. This is what correctly threads the needle between two genuinely
+ *     identical structural tags even when there are many other repeated tokens in between.
+ *  2. Plain LCS (lcsAtoms) as the base case, only ever run on whatever's left AFTER anchoring —
+ *     i.e. small stretches already boxed in by trusted anchors on both sides (or the whole input,
+ *     if it has no unique tokens at all to anchor on, which only happens for very short/highly
+ *     repetitive spans where an O(n*m) DP is cheap anyway).
+ * A final noise-collapse pass folds any short (< MIN_TRUSTED_RUN tokens) matched run that came
+ * from tier 2 and is sandwiched between two highlighted runs back into the highlight — even with
+ * anchoring, a small leftover gap can still occasionally resolve to a coincidental single-token
+ * match rather than a meaningful one.
  */
 function tokenizeForDiff(s: string): string[] {
   return s.match(/\s+|[A-Za-z0-9_]+|[^\sA-Za-z0-9_]/g) || []
 }
 
-// Max (post-trim) token-count product we're willing to run the O(n*m) LCS DP over. Prefix/suffix
-// trimming (below) usually keeps the actual DP input far smaller than the whole block even for
-// long blocks, since it only needs to cover the neighborhood of the actual edits — this budget
-// is a backstop for the rare case of a genuinely large, genuinely different middle section.
+type DiffAtom = { text: string; added: boolean; trusted: boolean }
+
+// Plain LCS, one atom per token. Used as the base case once patience-anchoring has boxed a
+// region in (or immediately, for regions too small to bother anchoring). Matches here are
+// `trusted: false` — still just "a" valid alignment, not necessarily "the" correct one.
+function lcsAtoms(A: string[], B: string[]): DiffAtom[] {
+  const n = A.length, m = B.length
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0))
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = A[i] === B[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1])
+    }
+  }
+  const out: DiffAtom[] = []
+  let i = 0, j = 0
+  while (i < n && j < m) {
+    if (A[i] === B[j]) { out.push({ text: B[j], added: false, trusted: false }); i++; j++ }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { i++ } // token only in A: dropped from rendered output
+    else { out.push({ text: B[j], added: true, trusted: false }); j++ } // token only in B: substituted/inserted
+  }
+  while (j < m) { out.push({ text: B[j], added: true, trusted: false }); j++ }
+  return out
+}
+
+// Below this (post-anchor-split) n*m, just run plain LCS directly — small enough to be cheap,
+// and not worth the overhead of scanning for anchors that likely aren't there anyway.
+const LCS_FALLBACK_MAX = 2500
+// Overall (pre-split) budget backstop — see wordDiff's top-level call site.
 const DIFF_TOKEN_BUDGET = 4_000_000
 
-// Minimum number of CONSECUTIVE tokens an LCS-matched run inside the (ambiguous) middle region
-// needs before we trust it as "genuinely carried-over text" rather than a coincidental character
-// collision — see the noise-collapse pass at the end of wordDiff for why this matters.
+function diffRange(A: string[], B: string[]): DiffAtom[] {
+  if (!A.length) return B.length ? [{ text: B.join(''), added: true, trusted: false }] : []
+  if (!B.length) return []
+  if (A.length * B.length <= LCS_FALLBACK_MAX) return lcsAtoms(A, B)
+
+  // Tokens that occur exactly once in BOTH A and B: unambiguous by construction, whatever else
+  // is going on elsewhere in the text.
+  const countA = new Map<string, number>(), firstA = new Map<string, number>()
+  A.forEach((t, idx) => { countA.set(t, (countA.get(t) || 0) + 1); if (!firstA.has(t)) firstA.set(t, idx) })
+  const countB = new Map<string, number>(), firstB = new Map<string, number>()
+  B.forEach((t, idx) => { countB.set(t, (countB.get(t) || 0) + 1); if (!firstB.has(t)) firstB.set(t, idx) })
+
+  const candidates: { ai: number; bi: number }[] = []
+  for (let ai = 0; ai < A.length; ai++) {
+    const t = A[ai]
+    if (countA.get(t) !== 1 || countB.get(t) !== 1) continue
+    candidates.push({ ai, bi: firstB.get(t)! })
+  }
+  if (!candidates.length) return lcsAtoms(A, B) // nothing unique to anchor on — fall back directly
+
+  // Anchors must also preserve relative order (can't match ai=5<->bi=10 and ai=8<->bi=3, that'd
+  // cross) — the longest increasing subsequence of B-positions, taken in A-order, is the largest
+  // non-crossing set of these unique matches.
+  const lis = lisIndices(candidates.map(c => c.bi))
+  const anchors = lis.map(idx => candidates[idx])
+
+  const out: DiffAtom[] = []
+  let prevA = 0, prevB = 0
+  for (const anc of anchors) {
+    out.push(...diffRange(A.slice(prevA, anc.ai), B.slice(prevB, anc.bi)))
+    out.push({ text: B[anc.bi], added: false, trusted: true })
+    prevA = anc.ai + 1; prevB = anc.bi + 1
+  }
+  out.push(...diffRange(A.slice(prevA), B.slice(prevB)))
+  return out
+}
+
+// Longest increasing subsequence, returned as indices into `seq` (patience sorting). Used to
+// pick the largest non-crossing set of candidate anchor pairs.
+function lisIndices(seq: number[]): number[] {
+  const parent: number[] = new Array(seq.length).fill(-1)
+  const pileTops: number[] = []
+  for (let idx = 0; idx < seq.length; idx++) {
+    const v = seq[idx]
+    let lo = 0, hi = pileTops.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (seq[pileTops[mid]] < v) lo = mid + 1
+      else hi = mid
+    }
+    if (lo > 0) parent[idx] = pileTops[lo - 1]
+    if (lo === pileTops.length) pileTops.push(idx)
+    else pileTops[lo] = idx
+  }
+  const result: number[] = []
+  let k = pileTops.length ? pileTops[pileTops.length - 1] : -1
+  while (k !== -1) { result.push(k); k = parent[k] }
+  return result.reverse()
+}
+
+// Minimum number of CONSECUTIVE tokens an untrusted (tier-2 LCS) matched run needs before we
+// trust it as "genuinely carried-over text" rather than a coincidental character collision —
+// see the noise-collapse pass at the end of wordDiff for why this matters.
 const MIN_TRUSTED_RUN = 2
 
 export function wordDiff(a: string, b: string): { text: string; added: boolean }[] {
   const A = tokenizeForDiff(a), B = tokenizeForDiff(b)
 
-  // Segment builder: merges adjacent runs that share both `added` and `trusted` into one, and
-  // (for untrusted `added:false` runs) counts how many discrete matched tokens went into it —
-  // that count is what the noise-collapse pass below uses to tell a real multi-token match apart
-  // from a single coincidentally-matching character.
-  type Seg = { text: string; added: boolean; tokens: number; trusted: boolean }
-  const segs: Seg[] = []
-  const push = (text: string, added: boolean, trusted: boolean) => {
-    if (!text) return
-    const last = segs[segs.length - 1]
-    if (last && last.added === added && last.trusted === trusted) { last.text += text; last.tokens++ }
-    else segs.push({ text, added, tokens: 1, trusted })
-  }
-
   // Trim matching prefix/suffix first. Real preset blocks are usually mostly-identical text with
-  // one or a few small substituted spots, so this alone shrinks the O(n*m) DP down to just the
-  // neighborhood of the actual edits, regardless of how long the surrounding block is. These are
-  // exact anchor matches walked in from both ends of the whole string, not an ambiguous LCS pick
-  // among several candidates — trustworthy regardless of length, unlike matches found by the DP
-  // below, so they're tagged `trusted` and the noise-collapse pass never reconsiders them.
+  // one or a few small substituted spots, so this alone shrinks the anchoring/DP work down to
+  // just the neighborhood of the actual edits, regardless of how long the surrounding block is.
+  // These are exact matches walked in from both ends of the whole string — trustworthy
+  // regardless of length, same as a patience anchor.
   let lo = 0
   const maxLo = Math.min(A.length, B.length)
   while (lo < maxLo && A[lo] === B[lo]) lo++
   let hiA = A.length, hiB = B.length
   while (hiA > lo && hiB > lo && A[hiA - 1] === B[hiB - 1]) { hiA--; hiB-- }
 
-  if (lo > 0) push(B.slice(0, lo).join(''), false, true)
-
   const midA = A.slice(lo, hiA), midB = B.slice(lo, hiB)
-  const n = midA.length, m = midB.length
-  if (n * m > DIFF_TOKEN_BUDGET) {
-    // Edit region itself too large to LCS cheaply — show it as one plain (unhighlighted) chunk
-    // rather than risk a multi-second synchronous diff. Prefix/suffix outside it are still
+  const atoms: DiffAtom[] = []
+  for (let k = 0; k < lo; k++) atoms.push({ text: B[k], added: false, trusted: true })
+  if (midA.length * midB.length > DIFF_TOKEN_BUDGET) {
+    // Edit region itself too large to diff cheaply — show it as one plain (unhighlighted) chunk
+    // rather than risk a multi-second synchronous computation. Prefix/suffix outside it are still
     // correctly un-highlighted above/below, so this only degrades the middle.
-    push(midB.join(''), false, false)
+    if (midB.length) atoms.push({ text: midB.join(''), added: false, trusted: false })
   } else {
-    const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0))
-    for (let i = n - 1; i >= 0; i--) {
-      for (let j = m - 1; j >= 0; j--) {
-        dp[i][j] = midA[i] === midB[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1])
-      }
-    }
-    let i = 0, j = 0
-    while (i < n && j < m) {
-      if (midA[i] === midB[j]) { push(midB[j], false, false); i++; j++ } // untrusted: an ambiguous LCS pick
-      else if (dp[i + 1][j] >= dp[i][j + 1]) { i++ } // token only in A: dropped from rendered output
-      else { push(midB[j], true, false); j++ }       // token only in B: substituted/inserted
-    }
-    while (j < m) { push(midB[j], true, false); j++ }
+    atoms.push(...diffRange(midA, midB))
+  }
+  for (let k = hiB; k < B.length; k++) atoms.push({ text: B[k], added: false, trusted: true })
+
+  // Merge consecutive same-`added` atoms into runs, tracking token count and whether ANY atom in
+  // the run is trusted (patience anchor or boundary trim) — a run touched by even one trusted
+  // atom is exempt from the noise-collapse check below, same as a long-enough untrusted run.
+  const segs: { text: string; added: boolean; tokens: number; anyTrusted: boolean }[] = []
+  for (const at of atoms) {
+    const last = segs[segs.length - 1]
+    if (last && last.added === at.added) { last.text += at.text; last.tokens++; last.anyTrusted = last.anyTrusted || at.trusted }
+    else segs.push({ text: at.text, added: at.added, tokens: 1, anyTrusted: at.trusted })
   }
 
-  if (hiB < B.length) push(B.slice(hiB).join(''), false, true)
-
-  // Noise collapse: when several identical short tokens exist on both sides (very common with
-  // CJK punctuation like `<`/`。`/quote marks), a plain LCS has multiple equally "optimal"
-  // alignments to choose from and can arbitrarily pick one that matches, say, a `<` deep inside
-  // one substituted value against an unrelated `<` a few characters later — technically a valid
-  // longest-common-subsequence, but visually it punches an unhighlighted hole through the middle
-  // of what should read as one continuous highlighted span. An untrusted matched run sandwiched
-  // between two highlighted runs, made of fewer than MIN_TRUSTED_RUN tokens, is far more likely
-  // to be exactly that kind of coincidental collision than a genuine chunk of carried-over
-  // literal text — so it gets folded into the surrounding highlight instead.
+  // Noise collapse: an untrusted matched run sandwiched between two highlighted runs, made of
+  // fewer than MIN_TRUSTED_RUN tokens, is more likely a coincidental leftover collision (even
+  // after anchoring, small gaps between anchors can still resolve this way) than a genuine chunk
+  // of carried-over literal text — fold it into the surrounding highlight instead of letting it
+  // punch a hole through the middle of it.
   const out: { text: string; added: boolean }[] = []
   for (let k = 0; k < segs.length; k++) {
     const seg = segs[k]
     const prevAdded = out.length ? out[out.length - 1].added : false
     const nextAdded = k + 1 < segs.length ? segs[k + 1].added : false
-    const isNoise = !seg.added && !seg.trusted && prevAdded && nextAdded && seg.tokens < MIN_TRUSTED_RUN
+    const isNoise = !seg.added && !seg.anyTrusted && prevAdded && nextAdded && seg.tokens < MIN_TRUSTED_RUN
     const added = isNoise ? true : seg.added
     if (out.length && out[out.length - 1].added === added) out[out.length - 1].text += seg.text
     else out.push({ text: seg.text, added })

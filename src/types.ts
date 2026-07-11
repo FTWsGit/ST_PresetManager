@@ -95,6 +95,7 @@ export interface Settings {
   varPanelWidth: number
   previewWidth: number
   varPanelFloat: boolean
+  previewFloat: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -110,6 +111,7 @@ export const DEFAULT_SETTINGS: Settings = {
   varPanelWidth: 360,
   previewWidth: 640,
   varPanelFloat: false,
+  previewFloat: true, // Preview historically was always a floating overlay — default true to preserve that on upgrade; togglable now, same as varPanelFloat.
 }
 
 export const FONT_OPTIONS = [
