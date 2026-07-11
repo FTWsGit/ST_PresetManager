@@ -375,6 +375,17 @@
 .pm-confirm-text strong{color:var(--pm-tx)}
 .pm-confirm-danger{color:var(--pm-dg)}
 
+/* Cross-Preset Copy Panel */
+.pm-cp-modal{width:92vw;max-width:1200px;height:80vh;max-height:80vh}
+.pm-cp-body{display:flex;gap:10px;flex:1;overflow:hidden;margin:4px 0 16px}
+.pm-cp-col{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--pm-bg);border:1px solid var(--pm-border);border-radius:var(--pm-r);overflow:hidden}
+.pm-cp-col-head{display:flex;gap:6px;padding:10px;border-bottom:1px solid var(--pm-border);flex-shrink:0}
+.pm-cp-sel{flex:1;min-width:0;font-size:13px}
+.pm-cp-toolbar{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--pm-border);flex-shrink:0}
+.pm-cp-list{flex:1;overflow-y:auto;padding:4px 6px;user-select:none;-webkit-user-select:none}
+.pm-cp-empty{color:var(--pm-tx3);font-size:13px;padding:16px;text-align:center}
+.pm-cp-mid{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:10px;flex-shrink:0}
+
 /* Settings */
 .pm-settings-section{margin-bottom:18px}
 .pm-settings-section>label{font-size:13px;font-weight:700;color:var(--pm-tx2);display:block;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em}

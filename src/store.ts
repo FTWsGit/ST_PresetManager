@@ -1,10 +1,10 @@
 import { defineStore } from 'pinia'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import type { PresetData, PresetBlock, OrderItem, OrderGroup, OrderNode, FlatNode, SearchResult, VarOp, Settings, PreviewBlockGroup } from './types'
 import { DEFAULT_SETTINGS, FONT_OPTIONS } from './types'
 import * as ST from './sillytavern'
 import type { PresetListEntry } from './sillytavern'
-import { escRe, macroAwareDiff } from './utils'
+import { escRe, macroAwareDiff, applyMultiSelect } from './utils'
 
 export function isGroup(node: OrderNode): node is OrderGroup {
   return 'children' in node && Array.isArray((node as any).children)
@@ -41,6 +41,19 @@ export const useStore = defineStore('main', () => {
   const toastMsg = ref('')
   const toastVisible = ref(false)
   let toastTimer: ReturnType<typeof setTimeout>
+
+  /* ====== Dirty tracking (drives the `*` on the header Save button) ======
+   * A single deep watcher on `prompts`/`order` covers every mutation path — direct block-content
+   * edits from Editor.vue's v-model-style bindings, and every explicit block/group op below
+   * (add/delete/hide/reorder/bind/unbind) that pushes/splices those same reactive arrays —
+   * without needing a `markDirty()` call sprinkled into each one individually.
+   * The only wrinkle: assigning a freshly-loaded preset's data into `prompts`/`order` in
+   * applyLoadedPreset() looks exactly like "a change" to this same watcher, so it fires and
+   * marks dirty too. applyLoadedPreset() clears it back via nextTick() right after — Vue flushes
+   * watchers queued by that assignment before that nextTick callback runs, so the flag always
+   * ends up correctly false once the load has fully settled. */
+  const dirty = ref(false)
+  watch([prompts, order], () => { dirty.value = true }, { deep: true })
 
   /* ====== Settings ====== */
   const settings = ref<Settings>(loadSettings())
@@ -130,6 +143,7 @@ export const useStore = defineStore('main', () => {
   const confirmOpen = ref(false)
   const confirmIdx = ref(-1)
   const hiddenOpen = ref(false)
+  const copyPanelOpen = ref(false) // Cross-preset block copy tool (CopyPanel.vue) — fully self-contained there, this is just the open flag
 
   /* ====== Jump requests (Editor listens & scrolls/selects; Sidebar listens & scrolls into view) ====== */
   // incremented token forces watchers to fire even if line/col repeat
@@ -284,6 +298,9 @@ export const useStore = defineStore('main', () => {
     anchorGi.value = -1
     presetName.value = name
     rebuildVarIndex()
+    // See dirty's own doc comment above: this assignment just tripped the deep watcher, clear
+    // it back to false once that's settled rather than treating a fresh load as "unsaved edits".
+    nextTick(() => { dirty.value = false })
   }
 
   function refreshPresetList() {
@@ -341,6 +358,7 @@ export const useStore = defineStore('main', () => {
       await ST.savePresetAs(name, JSON.parse(JSON.stringify(rawData.value)))
       presetName.value = name
       refreshPresetList() // saving under a new name adds an entry — keep the picker in sync
+      dirty.value = false
       showToast('Saved: ' + name)
     } catch (e: any) { showToast(`Save failed: ${e.message}`) }
   }
@@ -348,33 +366,21 @@ export const useStore = defineStore('main', () => {
   /* ====== Block Ops ====== */
   function selectBlock(gi: number, opts?: { ctrl?: boolean; shift?: boolean }) {
     const hasCtrl = opts?.ctrl ?? false
-    const hasShift = opts?.shift ?? false
-    if (!hasCtrl && !hasShift) {
-      // 普通点击：如果已选中且是唯一选中项，则取消选中；否则选中该项
-      if (selectedGi.value.size === 1 && selectedGi.value.has(gi)) {
-        selectedGi.value = new Set()
-        selIdx.value = -1
-        anchorGi.value = -1
-      } else {
-        selectedGi.value = new Set([gi])
-        selIdx.value = gi
-        anchorGi.value = gi
-      }
-    } else if (hasShift && anchorGi.value >= 0) {
-      const start = Math.min(anchorGi.value, gi)
-      const end = Math.max(anchorGi.value, gi)
-      const newSet = new Set<number>()
-      for (let i = start; i <= end; i++) newSet.add(i)
-      selectedGi.value = newSet
-      selIdx.value = gi
-    } else if (hasCtrl) {
-      const newSet = new Set(selectedGi.value)
-      if (newSet.has(gi)) newSet.delete(gi)
-      else newSet.add(gi)
-      selectedGi.value = newSet
-      selIdx.value = gi
-      anchorGi.value = gi
-    }
+    // Shared ctrl/shift/plain multi-select semantics — see applyMultiSelect's doc comment in
+    // utils.ts. `all` is just every valid gi in visual order (0..n-1); for this integer-index
+    // case that reduces to the same plain Math.min/max range this used to do inline.
+    const next = applyMultiSelect(
+      { selected: selectedGi.value, anchor: anchorGi.value >= 0 ? anchorGi.value : null },
+      gi,
+      flatNodes.value.map((_, i) => i),
+      opts || {}
+    )
+    selectedGi.value = next.selected
+    anchorGi.value = next.anchor ?? -1
+    // selIdx tracks the "focused" row for the editor pane, which isn't simply "whatever ended up
+    // selected" — a ctrl-click always focuses the row it clicked even when the click just
+    // deselected it (so the editor doesn't jump away), matching the original per-branch behavior.
+    selIdx.value = hasCtrl ? gi : (next.selected.has(gi) ? gi : -1)
     requestSidebarScroll()
   }
   function addBlock() {
@@ -834,7 +840,7 @@ export const useStore = defineStore('main', () => {
     showVarPopup, hideVarPopup, jumpToPopupVar, navPopupVar,
     previewOpen, previewMode, previewLoading, previewError,
     previewCollapsed, previewBlockGroups, previewRawText,
-    settingsOpen, confirmOpen, confirmIdx, hiddenOpen,
+    settingsOpen, confirmOpen, confirmIdx, hiddenOpen, copyPanelOpen, dirty,
     currentBlock, hasData, hiddenBlocks,
     editorJump, sidebarJumpToken, requestEditorJump, requestSidebarScroll,
     loadFromContext, doSavePreset, refreshPresetList, switchPreset,
