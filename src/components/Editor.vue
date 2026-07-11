@@ -50,14 +50,14 @@ const mirrorRef = ref<HTMLDivElement>()
 // `timeout` option). Lower = catches up sooner under sustained heavy typing, at the cost of
 // competing more with input rendering; higher = stays out of the way longer, but the highlighted
 // view can lag further behind while typing continuously.
-//   Try: 50 (catches up fast), 100 (default), 250 (very lenient, for huge blocks / weak devices).
-const RENDER_IDLE_TIMEOUT_MS = 50
+//   Try: 50 (catches up fast), 100 (very lenient, for huge blocks / weak devices).
+const RENDER_IDLE_TIMEOUT_MS = 30
 // RESIZE_DEBOUNCE_MS: how long to wait after the editor's size last changed (e.g. mid-drag on
 // the sidebar/var-nav/preview width handles) before re-measuring line-wrap. Higher = fewer
 // recomputes while actively dragging a width handle, but line numbers visibly lag the resize
 // by a bit more; lower = line numbers track the drag more closely, more recomputes during drag.
 //   Try: 60, 100 (default), 150.
-const RESIZE_DEBOUNCE_MS = 50
+const RESIZE_DEBOUNCE_MS = 100
 
 const content = ref('')
 const name = ref('')

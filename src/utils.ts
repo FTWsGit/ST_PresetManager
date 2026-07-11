@@ -371,3 +371,61 @@ export function wordDiff(a: string, b: string): { text: string; added: boolean }
   }
   return out
 }
+
+export interface MultiSelectState<T> {
+  selected: Set<T>
+  anchor: T | null
+}
+
+/**
+ * Shared plain/ctrl/shift multi-select semantics — one click model used both by the main
+ * editor's block list (Sidebar.vue, via store.ts's selectBlock) and CopyPanel.vue's two
+ * independent block lists, so the two don't drift out of sync with each other over time.
+ *
+ * `id` is whatever the caller uses to identify a selectable row (a numeric flatNodes index for
+ * the main sidebar, a string block identifier for CopyPanel). `all` is every selectable id in
+ * the list's current on-screen order — only needed for the shift-range case, to walk from the
+ * anchor to the clicked row in visual order rather than doing raw Math.min/max arithmetic on the
+ * ids themselves (which only happens to work when ids ARE consecutive integers, as in the
+ * original gi-index-based sidebar implementation; CopyPanel's string identifiers aren't).
+ *
+ * Semantics (mirrors the original store.ts selectBlock() exactly):
+ *  - plain click: if this is the only currently-selected row, clicking it again clears the
+ *    selection entirely; otherwise the selection becomes just this row, which also becomes the
+ *    new anchor.
+ *  - ctrl+click: toggles this row in/out of the existing selection; becomes the new anchor
+ *    either way (even when the click just removed it).
+ *  - shift+click: requires an existing anchor (a no-op otherwise) — selects every row between
+ *    the anchor and this one, inclusive, in `all`'s order. The anchor itself doesn't move, so
+ *    repeated shift-clicks keep extending/shrinking the range from the same fixed start point.
+ *
+ * Pure/no mutation — callers assign the returned state back to their own refs, which works
+ * equally well from a Pinia store action or a plain component-local ref.
+ */
+export function applyMultiSelect<T>(
+  state: MultiSelectState<T>,
+  id: T,
+  all: T[],
+  opts: { ctrl?: boolean; shift?: boolean }
+): MultiSelectState<T> {
+  const hasCtrl = opts.ctrl ?? false
+  const hasShift = opts.shift ?? false
+  if (!hasCtrl && !hasShift) {
+    if (state.selected.size === 1 && state.selected.has(id)) return { selected: new Set(), anchor: null }
+    return { selected: new Set([id]), anchor: id }
+  }
+  if (hasShift && state.anchor !== null) {
+    const ai = all.indexOf(state.anchor), bi = all.indexOf(id)
+    if (ai === -1 || bi === -1) return state
+    const lo = Math.min(ai, bi), hi = Math.max(ai, bi)
+    const next = new Set<T>()
+    for (let i = lo; i <= hi; i++) next.add(all[i])
+    return { selected: next, anchor: state.anchor }
+  }
+  if (hasCtrl) {
+    const next = new Set(state.selected)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return { selected: next, anchor: id }
+  }
+  return state
+}
