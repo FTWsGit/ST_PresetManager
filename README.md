@@ -1,5 +1,74 @@
-# Vue 3 + Vite
+# st-preset-manager
 
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+[English](./README_EN.md)
 
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
+一个为 [SillyTavern](https://github.com/SillyTavern/SillyTavern)「酒馆助手」设计的 Chat Completion 预设管理工具。基于 Vue 3 + Pinia + TypeScript 构建，打包为单文件脚本，直接注入到 SillyTavern 页面中运行。点击右下角的悬浮窗即可打开。
+
+它提供了一个占据全屏的独立面板，让你能够**可视化地编排、编辑、搜索、预览**预设中的每一个提示词块，而不再需要在 SillyTavern 原生的小弹窗里逐个翻找。
+
+---
+
+## 基本功能
+
+- **预设管理**：加载、保存、切换 SillyTavern 的 Chat Completion 预设，支持直接操作任意预设。
+- **块级编辑**：增删改提示词块，实时编辑内容、名称、角色（system/user/assistant）、启动/关闭。
+- **可视化排序**：拖拽调整块顺序，支持将多个块**绑定为可折叠分组**，或解绑恢复为平级。
+- **搜索与替换**：跨所有块的全文搜索，支持逐条跳转和替换。
+- **变量追踪**：自动索引所有 `{{setvar}}` / `{{addvar}}` / `{{getvar}}` 用法，提供右侧导航面板和点击悬浮窗，一键跳转到任意变量的定义或使用处。
+- **精确预览**：基于 SillyTavern 自身渲染管线的真实预览，支持"按块精确预览"（高亮宏替换结果）和"完整请求原文"（真实 generate 后拦截，看最终发给 API 的完整消息体）。
+- **跨预设复制**：自由复制提示词块到另一份预设中。
+
+---
+
+## 安装与使用
+
+有两种方式，分别是`使用酒馆助手(Tavern Helper)导入脚本`和`酒馆(SillyTavern)原生扩展程序`。
+
+### 使用酒馆助手(Tavern Helper)导入脚本
+1. 安装酒馆助手(详见[酒馆助手介绍](https://n0vi028.github.io/JS-Slash-Runner-Doc/guide/关于酒馆助手/介绍.html))
+2. 新建一个脚本
+3. 在`脚本内容`中填写`import 'https://cdn.jsdelivr.net/gh/FTWsGit/ST_PresetManager@latest/dist/index.iife.js'`，这样会从GitHub上面拉取项目构建产物，也就是这个工具。
+4. 启动脚本，右下角会出现一个悬浮窗，点击即可进入。
+
+### 使用酒馆(SillyTavern)原生扩展程序
+0. 本质上需要你把这个仓库放到`SillyTavern/data/default-user/extensions/`文件夹下面
+1. 一般来说，可以在SillyTavern中，打开`扩展程序`，点击`安装扩展程序`，填入这个仓库的URL(`https://github.com/FTWsGit/ST_PresetManager`)，然后安装即可。
+2. 右下角会出现一个悬浮窗，点击即可进入。
+
+---
+
+## 功能详解
+
+### 预设读写
+
+通过 SillyTavern 的 `PresetManager` API 进行预设的读取和保存。支持操作**任意**预设。
+
+### 分组系统
+
+可以将多个提示词块绑定为一个可折叠的分组，便于组织和管理。分组信息在保存时会被扁平化为 SillyTavern 兼容的格式，不会破坏与其他工具的兼容性。
+
+### 语法高亮
+
+编辑器支持递归优先级扫描的语法高亮，覆盖 `{{}}` 宏、尖括号、方括号、引号结构。`{{}}` 宏具有最高优先级。
+
+### 精确预览
+
+提供两种预览模式，均基于 SillyTavern 的真实渲染管线，而非本地模拟：
+
+- **按块精确预览**：执行 dry-run 生成，获取每个提示词块经宏/变量/正则处理后的真实渲染文本。新增或替换的内容会以高亮形式标出，方便确认宏是否正确展开。
+- **完整请求原文**：触发一次真实的生成流程，在请求发给 API 之前拦截并捕获完整的 `messages` 数组，然后立即中断生成。用于最终确认插件、连接档案等对请求体的二次加工结果。
+
+### 变量追踪
+
+自动扫描所有块中的 `{{setvar::name::value}}`、`{{addvar::name::value}}`、`{{getvar::name}}` 用法：
+
+- **变量导航面板**：右侧列出所有变量操作，按变量名分组，支持过滤和逐条跳转。
+- **点击悬浮窗**：在编辑器中点击任意变量名，会在光标附近弹出悬浮窗，列出该变量在当前预设中的全部出现位置，方便快速定位。
+
+### 跨预设复制
+
+独立的复制工具面板，左右两栏可分别加载不同的预设。选中块后一键复制到对面，支持多选。
+
+### 拖拽排序
+
+排序功能采用自定义的鼠标事件实现，确保在各种环境下都能正常工作。
