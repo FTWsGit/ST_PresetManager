@@ -375,6 +375,12 @@
 .pm-confirm-text strong{color:var(--pm-tx)}
 .pm-confirm-danger{color:var(--pm-dg)}
 
+/* Modal size modifiers — same pattern as .pm-cp-modal below: base .pm-modal + a modifier class
+   instead of inline min/max-width per instance. */
+.pm-modal.lg{min-width:500px;max-width:640px;max-height:82vh}
+.pm-modal.sm{min-width:420px;max-width:520px}
+.pm-modal-scroll{overflow-y:auto;flex:1;margin-bottom:16px;padding-right:4px}
+
 /* Cross-Preset Copy Panel */
 .pm-cp-modal{width:92vw;max-width:1200px;height:80vh;max-height:80vh}
 .pm-cp-body{display:flex;gap:10px;flex:1;overflow:hidden;margin:4px 0 16px}
@@ -393,6 +399,21 @@
 .pm-color-row input[type="color"]{width:36px;height:26px;border:1px solid var(--pm-border);border-radius:4px;cursor:pointer;padding:1px;background:var(--pm-bg-input)}
 .pm-color-row .cl-label{font-size:13px;color:var(--pm-tx);flex:1}
 .pm-color-row .cl-hex{font-family:var(--pm-fc);font-size:12px;color:var(--pm-tx3);min-width:60px}
+
+/* Shared small utilities — replace one-off inline style="..." attributes that were scattered
+   across Modals.vue / PreviewPanel.vue / VarPanel.vue for the same handful of layout patterns. */
+.pm-row{display:flex;align-items:center;gap:12px}
+.pm-row-tight{display:flex;gap:4px}
+.pm-row-mt{display:flex;gap:6px;margin-top:8px}
+.pm-flex1{flex:1}
+.pm-muted{color:var(--pm-tx3)}
+.pm-empty-note{color:var(--pm-tx3);padding:12px;font-size:13px}
+.pm-range-wide{width:220px;accent-color:var(--pm-ac)}
+.pm-select-wide{width:280px}
+.pm-value-label{font-family:var(--pm-fc);font-size:14px;min-width:50px}
+.pm-var-name-em{color:var(--pm-tx);font-weight:500}
+.pm-btn.close-btn.compact{padding:2px 6px}
+.pm-btn.sm{padding:4px 10px}
 
 /* Toast */
 .pm-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--pm-bg-a);border:1px solid var(--pm-border);border-radius:var(--pm-r);padding:9px 18px;font-size:12px;font-weight:500;z-index:100002;;transition:transform .3s ease,opacity .3s ease;opacity:0;pointer-events:none;white-space:nowrap}

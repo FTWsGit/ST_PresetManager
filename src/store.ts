@@ -1,10 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch, nextTick } from 'vue'
-import type { PresetData, PresetBlock, OrderItem, OrderGroup, OrderNode, FlatNode, SearchResult, VarOp, Settings, PreviewBlockGroup } from './types'
-import { DEFAULT_SETTINGS, FONT_OPTIONS } from './types'
+import type { PresetData, PresetBlock, OrderItem, OrderGroup, OrderNode, FlatNode, SearchResult, VarOp, PreviewBlockGroup } from './types'
 import * as ST from './sillytavern'
 import type { PresetListEntry } from './sillytavern'
 import { escRe, macroAwareDiff, applyMultiSelect } from './utils'
+import { useUiState } from './composables/useUiState'
 
 export function isGroup(node: OrderNode): node is OrderGroup {
   return 'children' in node && Array.isArray((node as any).children)
@@ -38,9 +38,10 @@ export const useStore = defineStore('main', () => {
 
   /* ====== UI State ====== */
   const panelOpen = ref(false)
-  const toastMsg = ref('')
-  const toastVisible = ref(false)
-  let toastTimer: ReturnType<typeof setTimeout>
+  // Settings (font/colors/panel widths) + toast notifications — extracted to useUiState() since
+  // neither is actually preset-specific; see that file's doc comment for why this is a
+  // composable rather than a second live Pinia store today.
+  const { settings, cssVars, saveSettings, resetSettings, toastMsg, toastVisible, showToast } = useUiState()
 
   /* ====== Dirty tracking (drives the `*` on the header Save button) ======
    * A single deep watcher on `prompts`/`order` covers every mutation path — direct block-content
@@ -54,61 +55,6 @@ export const useStore = defineStore('main', () => {
    * ends up correctly false once the load has fully settled. */
   const dirty = ref(false)
   watch([prompts, order], () => { dirty.value = true }, { deep: true })
-
-  /* ====== Settings ====== */
-  const settings = ref<Settings>(loadSettings())
-
-  /* ====== Group Ops ====== */
-  function bindSelected() {
-    const topLevelGi = Array.from(selectedGi.value)
-      .filter(gi => flatNodes.value[gi]?.parent === order.value)
-      .sort((a, b) => a - b)
-    if (topLevelGi.length < 2) { showToast('Select 2+ top-level blocks'); return }
-    // items 按 gi（视觉顺序）升序取，保持原始顺序
-    const items = topLevelGi.map(gi => order.value[flatNodes.value[gi].parentIdx])
-    // indices 单独降序排序，用于从后往前删除（避免索引漂移）
-    const indices = topLevelGi.map(gi => flatNodes.value[gi].parentIdx).sort((a, b) => b - a)
-    const firstIdx = Math.min(...indices)
-    indices.forEach(idx => order.value.splice(idx, 1))
-    const group: OrderGroup = {
-      id: 'group_' + Date.now(),
-      _gid: '_g' + Math.random().toString(36).slice(2, 9) + '_' + Date.now(),
-      name: 'Group (' + items.length + ')',
-      collapsed: false,
-      enabled: true,
-      children: items.flatMap(item =>
-        isGroup(item) ? [...item.children] : [{ identifier: item.identifier, enabled: item.enabled }]
-      )
-    }
-    order.value.splice(firstIdx, 0, group)
-    selectedGi.value = new Set()
-    anchorGi.value = -1
-    selIdx.value = -1
-    showToast('Bound ' + items.length + ' blocks')
-  }
-  function unbindGroup(gi: number) {
-    const node = flatNodes.value[gi]
-    if (!node || !node.isGroup) return
-    const parent = node.parent
-    const idx = node.parentIdx
-    const group = node.ref as OrderGroup
-    parent.splice(idx, 1, ...group.children)
-    selectedGi.value = new Set()
-    selIdx.value = -1
-    showToast('Unbound')
-  }
-  function toggleGroupCollapse(gi: number) {
-    const node = flatNodes.value[gi]
-    if (!node || !node.isGroup) return
-    const group = node.ref as OrderGroup
-    group.collapsed = !group.collapsed
-    if (group.collapsed && selIdx.value >= 0) {
-      const selNode = flatNodes.value[selIdx.value]
-      if (selNode && selNode.parent === group.children) {
-        selIdx.value = gi
-      }
-    }
-  }
 
   /* ====== Search ====== */
   const searchOpen = ref(false)
@@ -174,43 +120,6 @@ export const useStore = defineStore('main', () => {
     const ids = new Set(order.value.map(o => o.identifier))
     return prompts.value.filter(p => !ids.has(p.identifier))
   })
-  const cssVars = computed(() => {
-    const fm = FONT_OPTIONS.find(f => f.name === settings.value.editorFontFamily)
-    return {
-      '--pm-fs': settings.value.editorFontSize + 'px',
-      '--pm-ff': fm ? fm.value : FONT_OPTIONS[0].value,
-      ...Object.fromEntries(Object.entries(settings.value.syntaxColors).map(([k, v]) => ['--' + k, v])),
-    }
-  })
-
-  /* ====== Settings ====== */
-  function loadSettings(): Settings {
-    try {
-      const s = localStorage.getItem('st-pm-settings')
-      if (s) {
-        const p = JSON.parse(s)
-        return {
-          ...DEFAULT_SETTINGS, ...p,
-          syntaxColors: { ...DEFAULT_SETTINGS.syntaxColors, ...(p.syntaxColors || {}) },
-        }
-      }
-    } catch {}
-    return JSON.parse(JSON.stringify(DEFAULT_SETTINGS))
-  }
-  function saveSettings() { localStorage.setItem('st-pm-settings', JSON.stringify(settings.value)) }
-  function resetSettings() {
-    settings.value = JSON.parse(JSON.stringify(DEFAULT_SETTINGS))
-    saveSettings()
-    showToast('Settings reset')
-  }
-
-  /* ====== Toast ====== */
-  function showToast(msg: string, ms = 2500) {
-    toastMsg.value = msg
-    toastVisible.value = true
-    clearTimeout(toastTimer)
-    toastTimer = setTimeout(() => { toastVisible.value = false }, ms)
-  }
 
   /* ====== Preset IO ======
    * loadPresetByName() is the one real "load" primitive — everything else is a thin wrapper
@@ -317,6 +226,7 @@ export const useStore = defineStore('main', () => {
     applyLoadedPreset(data, name)
     if (!opts.silent) showToast('Loaded: ' + name)
   }
+  
 
   /** First load when the panel opens: whatever ST currently has selected. */
   function loadFromContext() {
@@ -334,6 +244,7 @@ export const useStore = defineStore('main', () => {
    *  discarded (the caller/UI is expected to confirm first if that matters). */
   function switchPreset(name: string) {
     if (!name || name === presetName.value) return
+    //ST.selectPresetByName(name) // Slow. Disable it for now.
     loadPresetByName(name)
   }
 
@@ -547,7 +458,6 @@ export const useStore = defineStore('main', () => {
   }
 
   /* ====== Search ====== */
-  const SEARCH_MAX = 200
   function doSearch() {
     const q = searchQuery.value
     searchResults.value = []

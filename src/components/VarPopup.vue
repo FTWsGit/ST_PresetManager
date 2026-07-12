@@ -13,9 +13,7 @@
       <div v-for="(v, i) in store.varPopupOps" :key="i"
            class="vp-item" :class="{ current: i === store.varPopupIdx }"
            @click="store.jumpToPopupVar(i)">
-        <span class="pm-vr-type" :class="v.type === 'setvar' ? 'set' : v.type === 'addvar' ? 'add' : 'get'">
-          {{ v.type === 'setvar' ? 'SET' : v.type === 'addvar' ? 'ADD' : 'GET' }}
-        </span>
+        <span class="pm-vr-type" :class="varOpBadge(v.type).cls">{{ varOpBadge(v.type).label }}</span>
         <span v-if="v.varValue" class="pm-vr-val">{{ v.varValue.length > 35 ? v.varValue.substring(0, 35) + '…' : v.varValue }}</span>
         <span class="pm-vr-block">[{{ v.blockName }}]</span>
       </div>
@@ -27,6 +25,7 @@
 import { onMounted, onUnmounted } from 'vue'
 import { useStore } from '../store'
 import { getHostDocument } from '../composables/hostEnv'
+import { varOpBadge } from '../utils'
 
 const store = useStore()
 

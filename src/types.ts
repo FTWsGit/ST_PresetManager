@@ -114,6 +114,12 @@ export const DEFAULT_SETTINGS: Settings = {
   previewFloat: true, // Preview historically was always a floating overlay — default true to preserve that on upgrade; togglable now, same as varPanelFloat.
 }
 
+/** Cap on how many search-result rows SearchPanel.vue renders in the results list — doSearch()
+ *  in store.ts still collects every match (used for prev/next/replace-all), this only limits the
+ *  DOM list. Lives here instead of a local const in SearchPanel.vue so there's one source of
+ *  truth if this ever needs to become a user setting. */
+export const SEARCH_MAX = 200
+
 export const FONT_OPTIONS = [
   { name: 'JetBrains Mono', value: "'JetBrains Mono','Fira Code',monospace" },
   { name: 'Fira Code', value: "'Fira Code',monospace" },

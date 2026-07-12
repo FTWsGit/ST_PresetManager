@@ -3,14 +3,14 @@
     <div class="pm-right-resize-handle" :class="{ active: resize.active.value }" @mousedown="resize.onMouseDown"></div>
     <div class="pm-rp-header">
       <span>📊 Variables</span>
-      <div style="display:flex;gap:4px">
+      <div class="pm-row-tight">
         <button class="pm-btn icon-btn" :class="{ active: store.settings.varPanelFloat }" title="Toggle float mode" @click="toggleFloat">📌</button>
-        <button class="pm-btn close-btn" @click="store.varNavOpen = false" style="padding:2px 6px">✕</button>
+        <button class="pm-btn close-btn compact" @click="store.varNavOpen = false">✕</button>
       </div>
     </div>
     <div class="pm-rp-tools">
       <input type="text" v-model="store.varFilterQ" placeholder="Filter..." />
-      <button class="pm-btn" @click="store.rebuildVarIndex()" style="padding:4px 10px">🔄</button>
+      <button class="pm-btn sm" @click="store.rebuildVarIndex()">🔄</button>
     </div>
     <div class="pm-rp-nav">
       <button class="pm-btn" @click="store.navVar(-1)">◀ Prev</button>
@@ -21,10 +21,8 @@
       <template v-for="(v, i) in store.filteredVarOps" :key="i">
         <div v-if="i === 0 || v.varName !== store.filteredVarOps[i - 1].varName" class="pm-vr-group">{{ v.varName }}</div>
         <div class="pm-vr-item" :class="{ active: i === store.varIdx }" @click="store.jumpToVarOp(i)">
-          <span class="pm-vr-type" :class="v.type === 'setvar' ? 'set' : v.type === 'addvar' ? 'add' : 'get'">
-            {{ v.type === 'setvar' ? 'SET' : v.type === 'addvar' ? 'ADD' : 'GET' }}
-          </span>
-          <span style="color:var(--pm-tx);font-weight:500">{{ v.varName }}</span>
+          <span class="pm-vr-type" :class="varOpBadge(v.type).cls">{{ varOpBadge(v.type).label }}</span>
+          <span class="pm-var-name-em">{{ v.varName }}</span>
           <span v-if="v.varValue" class="pm-vr-val">{{ v.varValue.length > 35 ? v.varValue.substring(0, 35) + '…' : v.varValue }}</span>
           <span class="pm-vr-block">[{{ v.blockName }}]</span>
         </div>
@@ -37,6 +35,7 @@
 import { watch } from 'vue'
 import { useStore } from '../store'
 import { usePanelResize } from '../composables/usePanelResize'
+import { varOpBadge } from '../utils'
 
 const store = useStore()
 

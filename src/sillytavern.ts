@@ -79,6 +79,23 @@ export function getPresetByName(name: string): PresetData | null {
   return JSON.parse(JSON.stringify(preset)) as PresetData
 }
 
+/** Select a preset: Can switch the preset that SillyTavern selects.
+ * If don't switch the selection, when the external function running
+ * you will get different data that is different with what you're looking
+ * like window.SillyTavern.generate() will use selected preset to run
+ * But this will be SLOW. So we just don't use it yet. 
+ */
+
+// export function selectPresetByName(name: string): boolean {
+//   const pm = getPresetManager()
+//   try {
+//     let id = pm.findPreset(name)
+//     pm.selectPreset(id)
+//   } catch {return false}
+
+//   return true
+// }
+
 /** 保存到指定名字的预设——同样不要求是当前选中的那个，可以另存/切换后再存。
  *
  * 之前这里走的是 `/api/settings/save`，保存的是整个用户 settings.json，我们当时只拼了一个

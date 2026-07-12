@@ -1,21 +1,21 @@
 <template>
   <!-- Settings -->
   <div v-if="store.settingsOpen" class="pm-modal-overlay" @click.self="store.settingsOpen = false">
-    <div class="pm-modal" style="min-width:500px;max-width:640px;max-height:82vh">
+    <div class="pm-modal lg">
       <h3>⚙ Editor Settings</h3>
-      <div style="overflow-y:auto;flex:1;margin-bottom:16px;padding-right:4px">
+      <div class="pm-modal-scroll">
         <div class="pm-settings-section">
           <label>Font Size</label>
-          <div style="display:flex;align-items:center;gap:12px">
-            <input type="range" min="11" max="22" step="0.5" style="width:220px;accent-color:var(--pm-ac)"
+          <div class="pm-row">
+            <input type="range" min="11" max="22" step="0.5" class="pm-range-wide"
                    v-model.number="draftFontSize"
                    @change="commitFontSize" />
-            <span style="font-family:var(--pm-fc);font-size:14px;min-width:50px">{{ draftFontSize }}px</span>
+            <span class="pm-value-label">{{ draftFontSize }}px</span>
           </div>
         </div>
         <div class="pm-settings-section">
           <label>Font Family</label>
-          <select style="width:280px" :value="store.settings.editorFontFamily"
+          <select class="pm-select-wide" :value="store.settings.editorFontFamily"
                   @change="store.settings.editorFontFamily = ($event.target as HTMLSelectElement).value; store.saveSettings()">
             <option v-for="f in FONT_OPTIONS" :key="f.name" :value="f.name">{{ f.name }}</option>
           </select>
@@ -38,7 +38,7 @@
 
   <!-- Confirm Delete -->
   <div v-if="store.confirmOpen" class="pm-modal-overlay" @click.self="store.confirmOpen = false">
-    <div class="pm-modal" style="min-width:420px;max-width:520px">
+    <div class="pm-modal sm">
       <h3>Delete prompt block?</h3>
       <p class="pm-confirm-text">This will permanently remove
         <strong>{{ store.prompts.find(p => p.identifier === store.order[store.confirmIdx]?.identifier)?.name || 'this block' }}</strong>
@@ -55,11 +55,11 @@
     <div class="pm-modal">
       <h3>Add Hidden Block</h3>
       <div class="pm-modal-list">
-        <div v-if="!store.hiddenBlocks.length" style="color:var(--pm-tx3);padding:12px;font-size:13px">No hidden blocks</div>
+        <div v-if="!store.hiddenBlocks.length" class="pm-empty-note">No hidden blocks</div>
         <div v-for="p in store.hiddenBlocks" :key="p.identifier" class="pm-modal-item"
              @click="store.addHiddenBlock(p.identifier); store.hiddenOpen = false">
-          <span class="pm-block-role" :class="p.role === 'user' ? 'user' : p.role === 'assistant' ? 'asst' : 'sys'">{{ p.role }}</span>
-          <span style="flex:1">{{ p.name || p.identifier }}</span>
+          <span class="pm-block-role" :class="roleClass(p.role)">{{ p.role }}</span>
+          <span class="pm-flex1">{{ p.name || p.identifier }}</span>
         </div>
       </div>
       <div class="pm-modal-footer">
@@ -77,6 +77,7 @@ import { ref, reactive, watch } from 'vue'
 import { useStore } from '../store'
 import { FONT_OPTIONS, SYNTAX_LABELS } from '../types'
 import type { SyntaxColors } from '../types'
+import { roleClass } from '../utils'
 
 const store = useStore()
 

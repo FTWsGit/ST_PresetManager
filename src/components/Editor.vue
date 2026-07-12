@@ -359,6 +359,13 @@ function openVarPopupAt(varName: string, cursorPos: number) {
   store.showVarPopup(varName, store.selIdx, cursorPos, { top, left })
 }
 
+// Shared by the Backspace-pair-delete and wrap-selection branches below — the two used to be
+// separately (but identically) declared inline as 'pairs' and 'wp'. Deliberately does NOT cover
+// the "open a new pair" branches further down ('{' has its own {{}} macro nesting special-case,
+// and the plain-bracket-open / quote-open branches intentionally use narrower subsets) — this map
+// is only for "given an already-adjacent open+close pair, do they match".
+const BRACKET_PAIR_MAP: Record<string, string> = { '{': '}', '(': ')', '[': ']', '<': '>', '"': '"', "'": "'" }
+
 // Tab & Auto-close (bracket/quote pairing, matching MiMo behavior 1:1)
 function onKeydown(e: KeyboardEvent) {
   const ta = taRef.value!; const pos = ta.selectionStart, end = ta.selectionEnd, val = ta.value, hasSel = pos !== end
@@ -371,17 +378,15 @@ function onKeydown(e: KeyboardEvent) {
       e.preventDefault(); ta.value = val.substring(0, pos - 2) + val.substring(pos + 2); ta.selectionStart = ta.selectionEnd = pos - 2; autoClosed = true; emitContent(); updateCursor(); return
     }
     const pv = val[pos - 1], nx = val[pos]
-    const pairs: Record<string, string> = { '{': '}', '(': ')', '[': ']', '<': '>', '"': '"', "'": "'" }
-    if (pairs[pv] === nx) { e.preventDefault(); ta.value = val.substring(0, pos - 1) + val.substring(pos + 1); ta.selectionStart = ta.selectionEnd = pos - 1; autoClosed = true; emitContent(); updateCursor(); return }
+    if (BRACKET_PAIR_MAP[pv] === nx) { e.preventDefault(); ta.value = val.substring(0, pos - 1) + val.substring(pos + 1); ta.selectionStart = ta.selectionEnd = pos - 1; autoClosed = true; emitContent(); updateCursor(); return }
   }
 
   // Wrap selection with bracket/quote pair
   if (hasSel) {
-    const wp: Record<string, string> = { '{': '}', '(': ')', '[': ']', '<': '>', '"': '"', "'": "'" }
-    if (wp[e.key]) {
+    if (BRACKET_PAIR_MAP[e.key]) {
       e.preventDefault()
       const s = val.substring(pos, end)
-      ta.value = val.substring(0, pos) + e.key + s + wp[e.key] + val.substring(end)
+      ta.value = val.substring(0, pos) + e.key + s + BRACKET_PAIR_MAP[e.key] + val.substring(end)
       ta.selectionStart = pos + 1; ta.selectionEnd = end + 1
       autoClosed = true; emitContent(); updateCursor()
     }

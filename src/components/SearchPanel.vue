@@ -25,10 +25,10 @@
 import { computed } from 'vue'
 import { useStore } from '../store'
 import { esc } from '../utils'
+import { SEARCH_MAX } from '../types'
 import type { SearchResult } from '../types'
 
 const store = useStore()
-const SEARCH_MAX = 200
 const displayResults = computed(() => store.searchResults.slice(0, SEARCH_MAX))
 
 function renderCtx(r: SearchResult) {

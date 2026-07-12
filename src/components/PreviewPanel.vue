@@ -3,10 +3,10 @@
     <div class="pm-right-resize-handle" :class="{ active: resize.active.value }" @mousedown="resize.onMouseDown"></div>
     <div class="pm-rp-header">
       <span>👁 Prompt Preview</span>
-      <div style="display:flex;gap:4px">
+      <div class="pm-row-tight">
         <button v-if="store.previewMode === 'blocks'" class="pm-btn icon-btn" title="Collapse/Expand all" @click="store.toggleAllPreviewBlocks()">▾</button>
         <button class="pm-btn icon-btn" :class="{ active: store.settings.previewFloat }" title="Toggle float mode" @click="toggleFloat">📌</button>
-        <button class="pm-btn close-btn" @click="store.previewOpen = false" style="padding:2px 6px">✕</button>
+        <button class="pm-btn close-btn compact" @click="store.previewOpen = false">✕</button>
       </div>
     </div>
     <div class="pp-tools">
@@ -18,7 +18,7 @@
         <template v-if="store.previewMode === 'blocks'">Real per-block rendering from SillyTavern's own prompt manager. Highlighted text was substituted in (macros/regex/etc) — not literally in the block's source.</template>
         <template v-else>The exact `messages` array SillyTavern was about to send to the API — captured off a real generation that's cancelled immediately after, so nothing actually gets sent.</template>
       </p>
-      <div style="display:flex;gap:6px;margin-top:8px">
+      <div class="pm-row-mt">
         <button class="pm-btn accent" :disabled="store.previewLoading" @click="generate()">
           <template v-if="store.previewLoading">⏳ Generating…</template>
           <template v-else>▶ Generate</template>
@@ -48,11 +48,11 @@
             </div>
           </div>
         </template>
-        <p v-else-if="!store.previewLoading" style="color:var(--pm-tx3)">Click "Generate" for a real per-block render (this runs an actual dry-run generation).</p>
+        <p v-else-if="!store.previewLoading" class="pm-muted">Click "Generate" for a real per-block render (this runs an actual dry-run generation).</p>
       </template>
       <template v-else>
         <pre v-if="store.previewRawText" class="pp-raw">{{ store.previewRawText }}</pre>
-        <p v-else-if="!store.previewLoading" style="color:var(--pm-tx3)">Click "Generate" to capture the final request — this briefly starts a real generation and cancels it right after.</p>
+        <p v-else-if="!store.previewLoading" class="pm-muted">Click "Generate" to capture the final request — this briefly starts a real generation and cancels it right after.</p>
       </template>
     </div>
   </div>
@@ -60,8 +60,9 @@
 
 <script setup lang="ts">
 import { useStore } from '../store'
-import { esc } from '../utils'
+import { esc, roleClass as roleClassOf } from '../utils'
 import { usePanelResize } from '../composables/usePanelResize'
+import { copyToHostClipboard } from '../composables/hostEnv'
 import { watch } from 'vue'
 import type { PreviewSegment } from '../types'
 
@@ -80,7 +81,7 @@ function toggleFloat() {
 }
 
 function roleClass(role: string) {
-  return role === 'user' ? 'pb-user' : role === 'assistant' ? 'pb-asst' : 'pb-sys'
+  return roleClassOf(role, 'pb-')
 }
 
 function renderSegments(segments: PreviewSegment[]) {
@@ -92,11 +93,12 @@ function generate() {
   else store.generatePreviewRaw()
 }
 
-function copyPreview() {
+async function copyPreview() {
   const text = store.previewMode === 'blocks'
     ? store.previewBlockGroups.flatMap(g => g.messages.map(m => m.segments.map(s => s.text).join(''))).join('\n\n')
     : store.previewRawText
   if (!text.trim()) { store.showToast('Nothing to copy'); return }
-  navigator.clipboard.writeText(text).then(() => store.showToast('Copied')).catch(() => store.showToast('Copy failed'))
+  const ok = await copyToHostClipboard(text)
+  store.showToast(ok ? 'Copied' : 'Copy failed — see console for details')
 }
 </script>

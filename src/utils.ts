@@ -10,6 +10,23 @@ export function escRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+/** Maps a {{setvar/addvar/getvar}} op's `type` to its badge label + CSS class ('SET'/'set',
+ *  'ADD'/'add', 'GET'/'get'). Was duplicated verbatim in VarPanel.vue and VarPopup.vue. */
+export function varOpBadge(type: 'setvar' | 'addvar' | 'get'): { cls: string; label: string } {
+  if (type === 'setvar') return { cls: 'set', label: 'SET' }
+  if (type === 'addvar') return { cls: 'add', label: 'ADD' }
+  return { cls: 'get', label: 'GET' }
+}
+
+/** Maps a prompt block's `role` to its short CSS class suffix ('user'/'asst'/'sys'), optionally
+ *  under a caller-supplied prefix (e.g. PreviewPanel's 'pb-user'/'pb-asst'/'pb-sys'). Was three
+ *  separate, functionally-identical copies (Sidebar.vue, CopyPanel.vue, PreviewPanel.vue) —
+ *  consolidated here so a future role type doesn't need updating in three places. */
+export function roleClass(role: string | undefined, prefix = ''): string {
+  const suffix = role === 'user' ? 'user' : role === 'assistant' ? 'asst' : 'sys'
+  return prefix + suffix
+}
+
 export function debounce<T extends (...a: any[]) => void>(fn: T, ms: number): T {
   let t: ReturnType<typeof setTimeout>
   return ((...a: any[]) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms) }) as unknown as T

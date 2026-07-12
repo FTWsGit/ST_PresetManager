@@ -73,17 +73,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
-import { useStore, isGroup } from '../store'
+import { ref, computed, watch, nextTick } from 'vue'
+import { useStore } from '../store'
 import type { OrderItem, OrderGroup, FlatNode } from '../types'
 import { usePanelResize } from '../composables/usePanelResize'
 import { getHostDocument, getHostWindow } from '../composables/hostEnv'
+import { roleClass as roleClassOf } from '../utils'
 
 const store = useStore()
 const sidebarRef = ref<HTMLElement>()
 const listRef = ref<HTMLElement>()
 const dragIdx = ref<number | null>(null)
-const dragSelectedGi = ref<Set<number>>(new Set())
 const dragOverIdx = ref(-1)
 const dragOverPos = ref<'top' | 'bottom'>('top')
 let dragScrollRAF: number | null = null
@@ -100,12 +100,9 @@ const canUnbind = computed(() => {
   return node?.isGroup ?? false
 })
 
-import { computed, nextTick } from 'vue'
-
 function getBlock(id: string) { return store.prompts.find(p => p.identifier === id) }
 function roleClass(id: string) {
-  const r = getBlock(id)?.role || 'system'
-  return r === 'user' ? 'user' : r === 'assistant' ? 'asst' : 'sys'
+  return roleClassOf(getBlock(id)?.role)
 }
 
 function nodeKey(node: FlatNode, gi: number) {
