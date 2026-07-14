@@ -2,7 +2,7 @@
 
 [English](./README_EN.md)
 
-一个为 [SillyTavern](https://github.com/SillyTavern/SillyTavern)「酒馆助手」设计的 Chat Completion 预设管理工具。基于 Vue 3 + Pinia + TypeScript 构建，打包为单文件脚本，直接注入到 SillyTavern 页面中运行。点击右下角的悬浮窗即可打开。
+一个为 [SillyTavern](https://github.com/SillyTavern/SillyTavern)「酒馆」设计的 Chat Completion 预设管理工具。基于 Vue 3 + Pinia + TypeScript 构建，打包为单文件脚本，直接注入到 SillyTavern 页面中运行。点击右下角的悬浮窗即可打开。
 
 它提供了一个占据全屏的独立面板，让你能够**可视化地编排、编辑、搜索、预览**预设中的每一个提示词块，而不再需要在 SillyTavern 原生的小弹窗里逐个翻找。
 

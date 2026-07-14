@@ -1,6 +1,6 @@
 # st-preset-manager
 
-A Chat Completion preset management tool for [SillyTavern](https://github.com/SillyTavern/SillyTavern) "Tavern Helper". Built with Vue 3 + Pinia + TypeScript and packaged as a single-file script that injects directly into the SillyTavern page. Click the floating button in the bottom-right corner to open.
+A Chat Completion preset management tool for [SillyTavern](https://github.com/SillyTavern/SillyTavern). Built with Vue 3 + Pinia + TypeScript and packaged as a single-file script that injects directly into the SillyTavern page. Click the floating button in the bottom-right corner to open.
 
 It provides a fullscreen independent panel for **visually organizing, editing, searching, and previewing** every prompt block in your preset — no more digging through SillyTavern's native small popups one by one.
 
@@ -33,7 +33,7 @@ Two methods: **Tavern Helper** (recommended) or **SillyTavern native extension**
    import 'https://cdn.jsdelivr.net/gh/FTWsGit/ST_PresetManager@latest/dist/index.iife.js'
    ```
    This pulls the built artifact from GitHub.
-4. Run the script. A floating button appears in the bottom-right corner. Click it to open the panel.
+4. Enable the script. A floating button appears in the bottom-right corner. Click it to open the panel.
 
 ### Method 2: SillyTavern Native Extension
 

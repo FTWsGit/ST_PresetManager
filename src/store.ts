@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch, nextTick } from 'vue'
-import type { PresetData, PresetBlock, OrderItem, OrderGroup, OrderNode, FlatNode, SearchResult, VarOp, PreviewBlockGroup } from './types'
+import type { PresetData, PresetBlock, OrderItem, OrderGroup, OrderNode, FlatNode, SearchResult, VarOp, PreviewBlockGroup, RegexScript } from './types'
 import * as ST from './sillytavern'
 import type { PresetListEntry } from './sillytavern'
 import { escRe, macroAwareDiff, applyMultiSelect } from './utils'
 import { useUiState } from './composables/useUiState'
+import { useTabsStore } from './tabsStore'
 
 export function isGroup(node: OrderNode): node is OrderGroup {
   return 'children' in node && Array.isArray((node as any).children)
@@ -43,6 +44,39 @@ export const useStore = defineStore('main', () => {
   // composable rather than a second live Pinia store today.
   const { settings, cssVars, saveSettings, resetSettings, toastMsg, toastVisible, showToast } = useUiState()
 
+  /* ====== Bound Regex Scripts ====== */
+  const regexScripts = computed<RegexScript[]>(() => {
+    if (!rawData.value) return []
+    if (!rawData.value.extensions) rawData.value.extensions = {}
+    if (!Array.isArray(rawData.value.extensions.regex_scripts)) rawData.value.extensions.regex_scripts = []
+    return rawData.value.extensions.regex_scripts
+  })
+
+  function addRegexScript(): string | null {
+    if (!rawData.value) { showToast('Load a preset first'); return null }
+    const script: RegexScript = {
+      id: 'regex_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      scriptName: 'New Regex', findRegex: '', replaceString: '', trimStrings: [],
+      placement: [2], // 默认只勾 AI 输出
+      disabled: false, markdownOnly: false, promptOnly: false, runOnEdit: false,
+      substituteRegex: 0, minDepth: null, maxDepth: null,
+    }
+    regexScripts.value.push(script)
+    return script.id
+  }
+  function deleteRegexScript(id: string) {
+    const i = regexScripts.value.findIndex(r => r.id === id)
+    if (i >= 0) regexScripts.value.splice(i, 1)
+  }
+
+  function reorderRegexScript(fromIdx: number, toIdx: number, after: boolean) {
+    const arr = regexScripts.value
+    if (fromIdx < 0 || toIdx < 0 || fromIdx >= arr.length || toIdx >= arr.length) return
+    const item = arr.splice(fromIdx, 1)[0]
+    const ni = fromIdx < toIdx ? (after ? toIdx : toIdx - 1) : (after ? toIdx + 1 : toIdx)
+    arr.splice(ni, 0, item)
+  }
+
   /* ====== Dirty tracking (drives the `*` on the header Save button) ======
    * A single deep watcher on `prompts`/`order` covers every mutation path — direct block-content
    * edits from Editor.vue's v-model-style bindings, and every explicit block/group op below
@@ -54,7 +88,7 @@ export const useStore = defineStore('main', () => {
    * watchers queued by that assignment before that nextTick callback runs, so the flag always
    * ends up correctly false once the load has fully settled. */
   const dirty = ref(false)
-  watch([prompts, order], () => { dirty.value = true }, { deep: true })
+  watch([prompts, order, regexScripts], () => { dirty.value = true }, { deep: true })
 
   /* ====== Search ====== */
   const searchOpen = ref(false)
@@ -207,8 +241,7 @@ export const useStore = defineStore('main', () => {
     anchorGi.value = -1
     presetName.value = name
     rebuildVarIndex()
-    // See dirty's own doc comment above: this assignment just tripped the deep watcher, clear
-    // it back to false once that's settled rather than treating a fresh load as "unsaved edits".
+    useTabsStore().closeAll() // 旧标签（block、regex都算）指向的都是即将被替换掉的这份数据
     nextTick(() => { dirty.value = false })
   }
 
@@ -272,6 +305,33 @@ export const useStore = defineStore('main', () => {
       dirty.value = false
       showToast('Saved: ' + name)
     } catch (e: any) { showToast(`Save failed: ${e.message}`) }
+  }
+
+  async function createPreset(name: string) {
+    const source = presetName.value ? ST.getPresetByName(presetName.value) : null
+    const blank: PresetData = source ?? { prompts: [], prompt_order: [{ order: [] }] }
+    blank.prompts = []
+    if (!Array.isArray(blank.prompt_order) || !blank.prompt_order[0]) blank.prompt_order = [{ order: [] }]
+    else blank.prompt_order[0].order = []
+    if (blank.extensions) blank.extensions.regex_scripts = []
+    try {
+      await ST.savePresetAs(name, blank)
+      refreshPresetList()
+      applyLoadedPreset(blank, name)
+      showToast('Created: ' + name)
+    } catch (e: any) { showToast('Create failed: ' + (e?.message || e)) }
+  }
+  async function removeCurrentPreset() {
+    const name = presetName.value
+    if (!name) return
+    try {
+      await ST.deletePreset(name)
+      refreshPresetList()
+      const next = presetList.value[0]?.name
+      if (next) loadPresetByName(next, { silent: true })
+      else { rawData.value = null as any; presetName.value = ''; selIdx.value = -1 }
+      showToast('Deleted: ' + name)
+    } catch (e: any) { showToast('Delete failed: ' + (e?.message || e)) }
   }
 
   /* ====== Block Ops ====== */
@@ -750,10 +810,11 @@ export const useStore = defineStore('main', () => {
     showVarPopup, hideVarPopup, jumpToPopupVar, navPopupVar,
     previewOpen, previewMode, previewLoading, previewError,
     previewCollapsed, previewBlockGroups, previewRawText,
+    regexScripts, addRegexScript, deleteRegexScript, reorderRegexScript,
     settingsOpen, confirmOpen, confirmIdx, hiddenOpen, copyPanelOpen, dirty,
     currentBlock, hasData, hiddenBlocks,
     editorJump, sidebarJumpToken, requestEditorJump, requestSidebarScroll,
-    loadFromContext, doSavePreset, refreshPresetList, switchPreset,
+    loadFromContext, doSavePreset, refreshPresetList, switchPreset, createPreset, removeCurrentPreset,
     selectBlock, addBlock, deleteBlock, confirmDelete, hideBlock, addHiddenBlock,
     toggleBlock, reorderBlock,
     bindSelected, unbindGroup, toggleGroupCollapse,

@@ -9,16 +9,21 @@
         <div class="pm-header">
           <button class="pm-btn accent" @click="store.doSavePreset()">💾 Save{{ store.dirty ? ' *' : '' }}</button>
           <div class="pm-sep"></div>
-          <button class="pm-btn" @click="store.loadFromContext()">🔄 Reload</button>
-          <button class="pm-btn" @click="store.addBlock()">+ New</button>
-          <button class="pm-btn" @click="store.hiddenOpen = true">+ Hidden</button>
-          <button class="pm-btn" @click="store.copyPanelOpen = true">🔀 Copy Blocks</button>
+          <button class="pm-btn" @click="store.loadFromContext()">🗘 Reload</button>
+          <button class="pm-btn" @click="store.copyPanelOpen = true">⇆ Copy Blocks</button>
+          <div class="pm-sep"></div>
+          <div class="pm-mode-switch">
+            <button class="pm-btn sm" :class="{ active: tabsStore.sidebarMode === 'block' }" @click="tabsStore.setSidebarMode('block')">预设</button>
+            <button class="pm-btn sm" :class="{ active: tabsStore.sidebarMode === 'regex' }" @click="tabsStore.setSidebarMode('regex')">正则</button>
+          </div>
           <div class="pm-sep"></div>
           <button class="pm-btn" :class="{ active: store.searchOpen }" @click="toggleSearch">🔍 Search</button>
           <button class="pm-btn" @click="store.settingsOpen = true">⚙ Settings</button>
           <div class="pm-spacer"></div>
           <button class="pm-btn" :class="{ active: store.varNavOpen }" @click="store.varNavOpen = !store.varNavOpen">📊 Var Nav</button>
           <button class="pm-btn" :class="{ active: store.previewOpen }" @click="store.previewOpen = !store.previewOpen">👁 Preview</button>
+          <button class="pm-btn icon-btn" title="New preset" @click="onNewPreset">+</button>
+          <button class="pm-btn icon-btn" title="Delete preset" @click="onDeletePreset" :disabled="!store.presetName">🗑</button>
           <select v-if="store.presetList.length" class="pm-preset-select" :value="store.presetName" @change="onPresetSelect($event)" title="Switch preset">
             <option v-if="!store.presetList.some(p => p.name === store.presetName)" :value="store.presetName" disabled>{{ store.presetName || '(none loaded)' }}</option>
             <option v-for="p in store.presetList" :key="p.name" :value="p.name">{{ p.name }}</option>
@@ -27,18 +32,16 @@
           <button class="pm-btn close-btn" @click="store.panelOpen = false">✕</button>
         </div>
 
-        <SearchPanel v-if="store.searchOpen" />
+        <SearchPanel v-if="store.searchOpen" /> 
 
         <div class="pm-main">
-          <Sidebar />
-          <template v-if="store.selIdx >= 0">
-            <Editor />
-          </template>
-          <div v-else class="pm-editor-panel">
-            <div class="pm-editor-empty">
-              <div class="icon">📝</div>
-              <p v-if="store.hasData">Select a block to edit</p>
-              <p v-else>Loading preset from context...</p>
+          <Sidebar v-if="tabsStore.sidebarMode === 'block'" />
+          <RegexSidebarList v-else-if="tabsStore.sidebarMode === 'regex'" />
+          <div class="pm-editor-col">
+            <TabBar />
+            <div class="pm-editor-row">
+              <EditorShell />
+              <SettingsDock />
             </div>
           </div>
           <VarPanel v-if="store.varNavOpen" />
@@ -57,14 +60,21 @@
 import { useStore } from './store'
 import SearchPanel from './components/SearchPanel.vue'
 import Sidebar from './components/Sidebar.vue'
-import Editor from './components/Editor.vue'
 import VarPanel from './components/VarPanel.vue'
 import PreviewPanel from './components/PreviewPanel.vue'
 import Modals from './components/Modals.vue'
 import VarPopup from './components/VarPopup.vue'
 import CopyPanel from './components/CopyPanel.vue'
 import { getHostWindow } from './composables/hostEnv'
+import TabBar from './components/TabBar.vue'
+import { useTabsStore } from './tabsStore'
+import EditorShell from './components/EditorShell.vue'
+import SettingsDock from './components/SettingsDock.vue'
+import RegexSidebarList from './components/RegexSidebarList.vue'
+import { useConfirmStore } from './confirmStore'
 
+const confirmStore = useConfirmStore()
+const tabsStore = useTabsStore()
 const store = useStore()
 
 function openPanel() {
@@ -86,5 +96,21 @@ function onPresetSelect(e: Event) {
     return
   }
   store.switchPreset(name)
+}
+
+
+function onNewPreset() {
+  const name = getHostWindow().prompt('新预设名称：', '')
+  if (!name) return
+  if (store.presetList.some(p => p.name === name)) { store.showToast('已存在同名预设'); return }
+  store.createPreset(name)
+}
+function onDeletePreset() {
+  if (!store.presetName) return
+  confirmStore.ask({
+    title: 'Delete preset?',
+    message: `This will permanently remove <strong>${store.presetName}</strong>. This cannot be undone.`,
+    onConfirm: () => store.removeCurrentPreset(),
+  })
 }
 </script>

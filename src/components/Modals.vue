@@ -49,6 +49,16 @@
       </div>
     </div>
   </div>
+  <div v-if="confirmStore.open" class="pm-modal-overlay" @click.self="confirmStore.cancel()">
+    <div class="pm-modal sm">
+      <h3>{{ confirmStore.title }}</h3>
+      <p class="pm-confirm-text" v-html="confirmStore.message"></p>
+      <div class="pm-modal-footer">
+        <button class="pm-btn" @click="confirmStore.cancel()">Cancel</button>
+        <button class="pm-btn accent pm-confirm-danger" @click="confirmStore.confirm()">Delete</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Add Hidden -->
   <div v-if="store.hiddenOpen" class="pm-modal-overlay" @click.self="store.hiddenOpen = false">
@@ -78,7 +88,9 @@ import { useStore } from '../store'
 import { FONT_OPTIONS, SYNTAX_LABELS } from '../types'
 import type { SyntaxColors } from '../types'
 import { roleClass } from '../utils'
+import { useConfirmStore } from '../confirmStore'
 
+const confirmStore = useConfirmStore()
 const store = useStore()
 
 // Local drafts for the two controls that fire continuously while being dragged (range slider,

@@ -2,6 +2,10 @@
   <aside class="pm-sidebar" ref="sidebarRef" :style="{ width: store.settings.sidebarWidth + 'px' }">
     <div class="pm-sidebar-header">
       <span>Prompt Blocks ({{ store.order.length }})</span>
+      <ListToolbar :count="store.prompts.length">
+        <button class="pm-btn" @click="store.addBlock()">+ New</button>
+        <button class="pm-btn" @click="store.hiddenOpen = true">+ Hidden</button>
+      </ListToolbar>
       <div class="pm-sidebar-tools">
         <button class="pm-btn" :disabled="!canBind" @click="store.bindSelected()">🔗 Bind</button>
         <button class="pm-btn" :disabled="!canUnbind" @click="unbindCurrent()">🔓 Unbind</button>
@@ -79,9 +83,10 @@ import type { OrderItem, OrderGroup, FlatNode } from '../types'
 import { usePanelResize } from '../composables/usePanelResize'
 import { getHostDocument, getHostWindow } from '../composables/hostEnv'
 import { roleClass as roleClassOf } from '../utils'
+import { useTabsStore } from '../tabsStore'
 
+const tabsStore = useTabsStore()
 const store = useStore()
-const sidebarRef = ref<HTMLElement>()
 const listRef = ref<HTMLElement>()
 const dragIdx = ref<number | null>(null)
 const dragOverIdx = ref(-1)
@@ -341,5 +346,13 @@ function onItemMouseDown(i: number, e: MouseEvent) {
 function onItemClick(gi: number, e: MouseEvent) {
   if (suppressClick) { suppressClick = false; return }
   store.selectBlock(gi, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey })
+  const node = store.flatNodes[gi]
+  if (node && !node.isGroup) {
+    if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      const item = node.ref as OrderItem
+      const block = store.prompts.find(p => p.identifier === item.identifier)
+      tabsStore.open({ domain: 'block', key: item.identifier, label: block?.name || item.identifier })
+    }
+  }
 }
 </script>

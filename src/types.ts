@@ -96,10 +96,12 @@ export interface Settings {
   previewWidth: number
   varPanelFloat: boolean
   previewFloat: boolean
+  settingsDockWidth: number
+  settingsDockFloat: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  editorFontSize: 14.5,
+  editorFontSize: 15,
   editorFontFamily: 'JetBrains Mono',
   syntaxColors: {
     'hl-b': '#58b8c0', 'hl-k': '#a078c0', 'hl-s': '#555570',
@@ -111,7 +113,9 @@ export const DEFAULT_SETTINGS: Settings = {
   varPanelWidth: 360,
   previewWidth: 640,
   varPanelFloat: false,
-  previewFloat: true, // Preview historically was always a floating overlay — default true to preserve that on upgrade; togglable now, same as varPanelFloat.
+  previewFloat: false, 
+  settingsDockWidth: 320,
+  settingsDockFloat: false,
 }
 
 /** Cap on how many search-result rows SearchPanel.vue renders in the results list — doSearch()
@@ -134,3 +138,35 @@ export const SYNTAX_LABELS: Record<string, string> = {
   'hl-m': 'Macro Content', 'hl-sq': "Single Quotes", 'hl-dq': "Double Quotes",
   'hl-ab': 'Angle Brackets < >', 'hl-sb': 'Square Brackets [ ]',
 }
+
+export interface RegexScript {
+  id: string
+  scriptName: string
+  findRegex: string
+  replaceString: string
+  trimStrings: string[]
+  placement: number[]
+  disabled: boolean
+  markdownOnly: boolean   // 仅影响显示
+  promptOnly: boolean     // 仅影响后端提示词
+  runOnEdit: boolean
+  substituteRegex: number // 0 不替换 / 1 替换(原始) / 2 替换(转义)
+  minDepth: number | null
+  maxDepth: number | null
+  [k: string]: any
+}
+
+/**No value 4 here*/
+export const REGEX_PLACEMENT_OPTIONS: { value: number; label: string }[] = [
+  { value: 1, label: '用户输入' },
+  { value: 2, label: 'AI 输出' },
+  { value: 3, label: '快捷命令' },
+  { value: 5, label: '世界书' },
+  { value: 6, label: '推理' },
+]
+
+export const REGEX_SUBSTITUTE_OPTIONS: { value: number; label: string }[] = [
+  { value: 0, label: '不替换' },
+  { value: 1, label: '替换（原始）' },
+  { value: 2, label: '替换（转义）' },
+]

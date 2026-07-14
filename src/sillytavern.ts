@@ -117,6 +117,12 @@ export async function savePresetAs(name: string, data: PresetData): Promise<void
   await Promise.resolve(pm.savePreset(name, plain))
 }
 
+export async function deletePreset(name: string): Promise<void> {
+  const pm = getPresetManager()
+  if (typeof pm.deletePreset !== 'function') throw new Error('SillyTavern context 不可用（deletePreset 缺失）')
+  await Promise.resolve(pm.deletePreset(name))
+}
+
 /** 清除缓存 */
 export function invalidateCache() {
   cachedCtx = null
