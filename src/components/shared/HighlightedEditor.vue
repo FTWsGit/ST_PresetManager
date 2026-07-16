@@ -1,6 +1,7 @@
 <!--
-  Generic macro-syntax textarea: line numbers + syntax-highlight overlay + fast canvas-based line
-  wrap measurement + bracket/quote auto-close + optional jump-to-position + optional var-click
+  Generic macro-syntax textarea: line numbers + syntax-highlight overlay + real-layout line
+  wrap measurement (batched DOM measurement, see updateLineNums) + bracket/quote auto-close +
+  optional jump-to-position + optional var-click
   detection. This is the machinery that used to live entirely inside Editor.vue (the block content
   editor) — extracted so RegexContentEditor.vue's replaceString editor gets the same line numbers,
   highlighting, and font-size/family (via the same --pm-fs/--pm-ff CSS vars) instead of being a
@@ -32,8 +33,12 @@
       <textarea class="pm-editor-ta" ref="taRef" spellcheck="false" :placeholder="placeholder"
                 :value="content" @input="onInput" @scroll="syncScroll"
                 @keydown="onKeydown" @click="onClick" @keyup="updateCursor"></textarea>
-      <!-- hidden mirror used to measure the true wrapped height of each line (handles CJK / tabs / mixed width) -->
+      <!-- hidden mirror used to measure single-line height / caret coords (handles CJK / tabs / mixed width) -->
       <div class="pm-line-mirror" ref="mirrorRef" aria-hidden="true"></div>
+      <!-- hidden batch container: per-logical-line wrapped heights are measured by laying each
+           line out in its own child div here (one append pass + one read pass ≈ one layout),
+           see updateLineNums() -->
+      <div class="pm-lh-measure" ref="measureRef" aria-hidden="true"></div>
     </div>
   </div>
   <div v-if="showStatusbar" class="pm-statusbar">
@@ -82,6 +87,7 @@ const hlRef = ref<HTMLPreElement>()
 const lnRef = ref<HTMLElement>()
 const editorWrap = ref<HTMLElement>()
 const mirrorRef = ref<HTMLDivElement>()
+const measureRef = ref<HTMLDivElement>()
 
 // ---- Tunable performance knobs ----
 // RENDER_IDLE_TIMEOUT_MS: the maximum time we'll let syntax-highlight/line-number recompute
@@ -137,35 +143,23 @@ function emitContent() {
   scheduleRenderUpdate()
 }
 
-// ---- Fast text measurement ----
-// Measuring each line's wrapped height by writing it into a hidden DOM element and reading
-// offsetHeight forces a synchronous browser reflow — doing that once PER LINE, on every
-// keystroke, would be the dominant cost for any block with many lines. A <canvas> context's
-// measureText() gives the same information (rendered text width) without ever touching layout.
-let measureCanvas: HTMLCanvasElement | null = null
-let measureCtx: CanvasRenderingContext2D | null = null
-function getMeasureCtx(): CanvasRenderingContext2D {
-  if (!measureCtx) {
-    // IMPORTANT: create this via the host document, not the bare global `document`. A canvas
-    // 2D context resolves font names against whichever document created the canvas, and our
-    // fonts are only loaded into the HOST document's stylesheet (see main.ts's style injection).
-    measureCanvas = getHostDocument().createElement('canvas')
-    measureCtx = measureCanvas.getContext('2d')!
-  }
-  return measureCtx
-}
-function updateMeasureFont(): CanvasRenderingContext2D {
-  const ctx = getMeasureCtx()
-  if (taRef.value) {
-    const cs = getComputedStyle(taRef.value) // safe: resolves off the live element itself, not a global
-    const fontStr = cs.fontSize + ' ' + cs.fontFamily
-    if (ctx.font !== fontStr) { ctx.font = fontStr; cachedLH = -1 } // font changed -> line-height cache is stale
-  }
-  return ctx
-}
+// ---- Per-line wrapped-height measurement ----
+// The line-number gutter must match the textarea's REAL wrapped layout exactly. The previous
+// approach estimated each line's wrap count from a canvas measureText() width — but that model
+// can't reproduce pre-wrap+break-word layout: it UNDERCOUNTS whenever word-boundary breaks
+// waste end-of-line space (gutter falls behind the text), and MISCOUNTS tab stops (a tab
+// advances to the next multiple-of-`tab-size` column — anywhere from 1 to 4 space-widths —
+// not a fixed 4-space width; gutter overshoots). Both directions were visible depending on
+// content. So instead we let the browser itself do the wrapping: each logical line is laid out
+// in its own child of a hidden container (.pm-lh-measure) that shares the textarea's exact
+// font/white-space/tab-size CSS and content width, and we read its real offsetHeight.
+// Cost stays low because (a) results are cached per (contentWidth, lineText) — steady-state
+// typing only ever re-measures the line being edited — and (b) cache misses are measured in
+// one append-everything-then-read-everything batch (a single layout pass, NOT one forced
+// reflow per line), so even pasting a huge block is fine.
 
-// Single-line height (in px) still comes from one real DOM measurement — canvas can't give us
-// the CSS line-height directly — but it's cached and only re-measured when the font changes.
+// Single-line height (in px) comes from one real DOM measurement of the mirror element —
+// cached, and only re-measured when the font changes (see refreshFont).
 let cachedLH = -1
 function measureSingleLineHeight(): number {
   if (cachedLH > 0) return cachedLH
@@ -179,24 +173,49 @@ function measureSingleLineHeight(): number {
   return h
 }
 
+const lineHeightCache = new Map<string, number>() // key: `${contentWidth}|${lineText}` → px height
 let lastLNText: string | null = null
 let lastLNWidth = -1
 function updateLineNums() {
   if (!taRef.value) return
   const ta = taRef.value
   const text = content.value
-  const cw = ta.clientWidth - 32 // minus the textarea's own 16px left+right padding
+  const cs = getComputedStyle(ta) // safe: resolves off the live element itself, not a global
+  const cw = ta.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
   if (text === lastLNText && cw === lastLNWidth) return // nothing that would change wrapping has changed
   lastLNText = text; lastLNWidth = cw
   if (cw <= 0) { lineHeights.value = []; return }
-  const ctx = updateMeasureFont()
   const lh = measureSingleLineHeight()
-  lineHeights.value = text.split('\n').map(line => {
-    const expanded = line.replace(/\t/g, '    ') // approximate tab width for measurement purposes
-    const w = expanded.length > 0 ? ctx.measureText(expanded).width : 0
-    const vl = Math.max(1, Math.ceil(w / cw))
-    return lh * vl
-  })
+  const lines = text.split('\n')
+  const heights: number[] = new Array(lines.length)
+  const misses: { i: number; key: string; line: string }[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (!line) { heights[i] = lh; continue } // an empty logical line always renders as exactly one row
+    const key = cw + '|' + line
+    const hit = lineHeightCache.get(key)
+    if (hit !== undefined) heights[i] = hit
+    else misses.push({ i, key, line })
+  }
+  if (misses.length && measureRef.value) {
+    const hostDoc = getHostDocument() // imperatively-created nodes must come from the host document (hostEnv.ts)
+    const m = measureRef.value
+    m.style.width = ta.clientWidth + 'px' // border-box + same side padding as the textarea → same content width
+    const els: HTMLElement[] = []
+    for (const { line } of misses) {
+      const d = hostDoc.createElement('div')
+      d.textContent = line
+      els.push(d)
+      m.appendChild(d)
+    }
+    for (let k = 0; k < misses.length; k++) {
+      const h = Math.max(els[k].offsetHeight, lh)
+      heights[misses[k].i] = h
+      if (lineHeightCache.size < 5000) lineHeightCache.set(misses[k].key, h)
+    }
+    m.textContent = '' // drop all measurement children in one go
+  }
+  lineHeights.value = heights
 }
 
 // Schedules the (comparatively expensive, for big blocks) highlight + line-number + cursor
@@ -422,6 +441,7 @@ onUnmounted(() => { if (ro) ro.disconnect(); if (pendingIdle) cic(pendingIdle) }
 function refreshFont() {
   cachedLH = -1
   lastLNText = null
+  lineHeightCache.clear() // font metrics changed — every cached wrapped height is stale
   nextTick(() => updateLineNums())
 }
 defineExpose({ refreshFont })

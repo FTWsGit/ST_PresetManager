@@ -45,7 +45,7 @@
     <div class="pm-modal sm">
       <h3>Delete prompt block?</h3>
       <p class="pm-confirm-text">This will permanently remove
-        <strong>{{ store.prompts.find(p => p.identifier === store.order[store.confirmIdx]?.identifier)?.name || 'this block' }}</strong>
+        <strong>{{ store.prompts.find(p => p.identifier === (store.order[store.confirmIdx] as any)?.identifier)?.name || 'this block' }}</strong>
         from the preset.</p>
       <div class="pm-modal-footer">
         <button class="pm-btn" @click="store.confirmOpen = false">Cancel</button>

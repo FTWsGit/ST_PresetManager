@@ -36,7 +36,6 @@
                  @mousedown.stop />
           <span class="pm-group-count">{{ (node.ref as OrderGroup).children.length }}</span>
           <span class="pm-block-actions">
-            <span class="pm-block-act" title="Rename" @click.stop="startEditGroupName(gi)">✎</span>
             <span class="pm-block-act" @click.stop="store.toggleBlock(gi)">👁</span>
             <span class="pm-block-act del" @click.stop="store.deleteBlock(gi)">🗑</span>
           </span>
@@ -65,7 +64,6 @@
                  @mousedown.stop />
           <span class="pm-block-role" :class="roleClass((node.ref as OrderItem).identifier)">{{ getBlock((node.ref as OrderItem).identifier)?.role || 'system' }}</span>
           <span class="pm-block-actions">
-            <span class="pm-block-act" title="Rename" @click.stop="startEditBlockName(gi)">✎</span>
             <span class="pm-block-act" @click.stop="store.hideBlock(gi)">👁</span>
             <span class="pm-block-act del" @click.stop="store.deleteBlock(gi)">🗑</span>
           </span>

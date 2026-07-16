@@ -155,7 +155,9 @@ export const usePresetStore = defineStore('main', () => {
   })
   const hasData = computed(() => rawData.value !== null)
   const hiddenBlocks = computed(() => {
-    const ids = new Set(order.value.map(o => o.identifier))
+    // Expand groups: a grouped block's identifier lives in group.children, not at the top
+    // level — without this, every grouped block would wrongly show up in the Add Hidden list.
+    const ids = new Set(order.value.flatMap(o => isGroup(o) ? o.children.map(c => c.identifier) : [o.identifier]))
     return prompts.value.filter(p => !ids.has(p.identifier))
   })
 
@@ -643,7 +645,9 @@ export const usePresetStore = defineStore('main', () => {
     })
     allVarOps.value.sort((a, b) =>
       a.varName.localeCompare(b.varName) ||
-      ({ get: 0, setvar: 1, addvar: 2 }[a.type] - { get: 0, setvar: 1, addvar: 2 }[b.type])
+      // Within the same variable: writes before reads — SET → ADD → GET. (Used to be
+      // get-first, which put the least informative badge at the top of each group.)
+      ({ setvar: 0, addvar: 1, get: 2 }[a.type] - { setvar: 0, addvar: 1, get: 2 }[b.type])
     )
     filterVarNav()
   }
@@ -683,6 +687,7 @@ export const usePresetStore = defineStore('main', () => {
     let currentIdx = -1
     const re = new RegExp('\\{\\{(setvar|addvar)::' + escRe(varName) + '::([\\s\\S]*?)\\}\\}|\\{\\{getvar::' + escRe(varName) + '\\}\\}', 'g')
     order.value.forEach((o, oi) => {
+      if (isGroup(o)) return // var-popup currently scans top-level order only (grouped blocks are skipped)
       const p = prompts.value.find(pp => pp.identifier === o.identifier)
       if (!p) return
       const c = p.content || ''
@@ -717,7 +722,7 @@ export const usePresetStore = defineStore('main', () => {
     if (i < 0 || i >= varPopupOps.value.length) return
     varPopupIdx.value = i
     const v = varPopupOps.value[i]
-    const oIdx = order.value.findIndex(o => o.identifier === v.blockId)
+    const oIdx = order.value.findIndex(o => !isGroup(o) && o.identifier === v.blockId)
     if (oIdx >= 0 && oIdx !== selIdx.value) selectBlock(oIdx)
     requestEditorJump(v.line, v.col, v.varName.length)
   }
