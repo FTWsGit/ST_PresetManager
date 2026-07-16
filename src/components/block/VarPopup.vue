@@ -23,11 +23,11 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
-import { useStore } from '../store'
-import { getHostDocument } from '../composables/hostEnv'
-import { varOpBadge } from '../utils'
+import { usePresetStore } from '../../stores/presetStore'
+import { getHostDocument } from '../../composables/hostEnv'
+import { varOpBadge } from '../../utils'
 
-const store = useStore()
+const store = usePresetStore()
 
 // Close on outside click (anywhere that isn't the popup itself or the editor textarea, so
 // clicking a different {{var}} to re-target the popup still works via checkVarClick).

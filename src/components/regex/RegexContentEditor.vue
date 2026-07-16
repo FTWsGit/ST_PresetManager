@@ -1,6 +1,6 @@
 <template>
   <div class="pm-editor-panel pm-rce" v-if="script">
-    <div class="pm-editor-meta pm-rce-meta">
+    <div class="pm-editor-meta">
       <span class="pm-rce-name">{{ script.scriptName || '(未命名)' }}</span>
       <span class="pm-spacer"></span>
       <button class="pm-btn sm" :class="{ active: mode === 'edit' }" @click="mode = 'edit'">✏️ 编辑</button>
@@ -12,14 +12,20 @@
       <button class="pm-btn sm" :class="{ active: tabsStore.settingsDockOpen }" @click="tabsStore.toggleSettingsDock()" title="设置面板">⚙</button>
     </div>
 
-    <div class="pm-rce-body">
-      <textarea v-if="mode === 'edit'" class="pm-rce-replace"
-                v-model="script.replaceString" spellcheck="false"
-                placeholder="用 {{match}} 引用整个匹配，$1 / $2 引用捕获组"></textarea>
-      <template v-else>
-        <div v-if="!renderHtml" class="pm-rce-preview">{{ previewText }}</div>
-        <div v-else class="pm-rce-preview" v-html="previewText"></div>
-      </template>
+    <!-- Edit mode: same HighlightedEditor as the block content editor (line numbers, macro
+         syntax highlight, font-size/family from Settings, bracket/quote auto-close) — this used
+         to be a bare <textarea>, which is why it never picked up font settings or highlighting.
+         Rendered as a flex-column sibling of the meta bar (not nested inside .pm-rce-body), same
+         shell shape as BlockContentEditor.vue, so HighlightedEditor's internal statusbar sits
+         below the text area instead of squeezed beside it. -->
+    <HighlightedEditor v-if="mode === 'edit'"
+      ref="editorRef"
+      v-model="replaceStringModel"
+      placeholder="用 {{match}} 引用整个匹配，$1 / $2 引用捕获组" />
+
+    <div v-else class="pm-rce-body">
+      <div v-if="!renderHtml" class="pm-rce-preview">{{ previewText }}</div>
+      <div v-else class="pm-rce-preview" v-html="previewText"></div>
     </div>
 
     <div class="pm-rce-testbar">
@@ -32,15 +38,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useStore } from '../../store'
-import { useTabsStore } from '../../tabsStore'
+import { ref, computed, watch } from 'vue'
+import { usePresetStore } from '../../stores/presetStore'
+import { useTabsStore } from '../../stores/tabsStore'
 import { applyRegexScript, parseFindRegex } from '../../regexEngine'
+import HighlightedEditor from '../shared/HighlightedEditor.vue'
 
-const store = useStore()
+const store = usePresetStore()
 const tabsStore = useTabsStore()
 const mode = ref<'edit' | 'preview'>('edit')
 const renderHtml = ref(false)
+const editorRef = ref<InstanceType<typeof HighlightedEditor>>()
 // 简化处理：测试文本这一版是单个共享 ref，切换正则标签不会各自记住各自的测试文本——
 // 用起来发现真的需要"每条正则记自己的测试文本"再升级成 Record<id, string>，先别过度设计。
 const testInput = ref('')
@@ -51,5 +59,21 @@ const previewText = computed(() => {
   if (!script.value || !testInput.value) return ''
   try { return applyRegexScript(testInput.value, script.value) }
   catch (e: any) { return '(预览出错: ' + (e?.message || e) + ')' }
+})
+
+// v-model bridge into the currently-selected script's replaceString — same pattern as
+// BlockContentEditor.vue's `content` computed. When the active regex tab changes, this getter's
+// return value changes too, and HighlightedEditor's own "external modelValue change" detection
+// picks it up and re-renders — no extra watcher needed here for that.
+const replaceStringModel = computed<string>({
+  get: () => script.value?.replaceString ?? '',
+  set: (v) => { if (script.value) script.value.replaceString = v },
+})
+
+// Settings dialog font-size/family changes don't resize the textarea itself, so
+// HighlightedEditor's own ResizeObserver won't catch them — nudge it explicitly, same as
+// BlockContentEditor.vue.
+watch(() => [store.settings.editorFontSize, store.settings.editorFontFamily], () => {
+  editorRef.value?.refreshFont()
 })
 </script>

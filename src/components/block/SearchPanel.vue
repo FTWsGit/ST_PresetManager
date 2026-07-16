@@ -23,12 +23,12 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useStore } from '../store'
-import { esc } from '../utils'
-import { SEARCH_MAX } from '../types'
-import type { SearchResult } from '../types'
+import { usePresetStore } from '../../stores/presetStore'
+import { esc } from '../../utils'
+import { SEARCH_MAX } from '../../types'
+import type { SearchResult } from '../../types'
 
-const store = useStore()
+const store = usePresetStore()
 const displayResults = computed(() => store.searchResults.slice(0, SEARCH_MAX))
 
 function renderCtx(r: SearchResult) {

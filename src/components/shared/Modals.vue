@@ -36,7 +36,11 @@
     </div>
   </div>
 
-  <!-- Confirm Delete -->
+  <!-- Confirm Delete (block 域老机制，见 PROJECT_HANDOFF.md 已知过渡状态——尚未并入 confirmStore，
+       因为它绑定了 store.confirmIdx 这个 flatNodes 下标，跟 confirmStore 通用的 onConfirm 闭包
+       模式语义上是一回事，只是没有迁移过去，保留原样不动风险最低。这也是这个文件（以及这次
+       reorg）里唯一还带着 block 专属内容的部分——其余都是真正 domain-agnostic 的通用弹窗
+       host，这就是它留在 shared/ 而不是 block/ 的原因。) -->
   <div v-if="store.confirmOpen" class="pm-modal-overlay" @click.self="store.confirmOpen = false">
     <div class="pm-modal sm">
       <h3>Delete prompt block?</h3>
@@ -49,13 +53,35 @@
       </div>
     </div>
   </div>
+
+  <!-- Generic Confirm (confirmStore) — every "are you sure" in the app other than block-delete
+       goes through this one dialog: preset switch/delete, regex delete, CopyPanel reload/remove/
+       close-unsaved. NEVER use getHostWindow().confirm() — it's unreliable inside TauriTavern's
+       WebView2 host, see confirmStore.ts's doc comment. -->
   <div v-if="confirmStore.open" class="pm-modal-overlay" @click.self="confirmStore.cancel()">
     <div class="pm-modal sm">
       <h3>{{ confirmStore.title }}</h3>
       <p class="pm-confirm-text" v-html="confirmStore.message"></p>
       <div class="pm-modal-footer">
-        <button class="pm-btn" @click="confirmStore.cancel()">Cancel</button>
-        <button class="pm-btn accent pm-confirm-danger" @click="confirmStore.confirm()">Delete</button>
+        <button class="pm-btn" @click="confirmStore.cancel()">{{ confirmStore.cancelText }}</button>
+        <button class="pm-btn accent" :class="{ 'pm-confirm-danger': confirmStore.danger }" @click="confirmStore.confirm()">{{ confirmStore.confirmText }}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Generic Prompt (confirmStore) — replaces window.prompt(), same TauriTavern reasoning. -->
+  <div v-if="confirmStore.promptOpen" class="pm-modal-overlay" @click.self="confirmStore.cancelPrompt()">
+    <div class="pm-modal sm">
+      <h3>{{ confirmStore.promptTitle }}</h3>
+      <p v-if="confirmStore.promptMessage" class="pm-confirm-text">{{ confirmStore.promptMessage }}</p>
+      <input type="text" class="pm-prompt-input" ref="promptInputRef"
+             v-model="confirmStore.promptValue"
+             :placeholder="confirmStore.promptPlaceholder"
+             @keydown.enter.prevent="confirmStore.confirmPrompt()"
+             @keydown.esc.prevent="confirmStore.cancelPrompt()" />
+      <div class="pm-modal-footer">
+        <button class="pm-btn" @click="confirmStore.cancelPrompt()">{{ confirmStore.promptCancelText }}</button>
+        <button class="pm-btn accent" @click="confirmStore.confirmPrompt()">{{ confirmStore.promptConfirmText }}</button>
       </div>
     </div>
   </div>
@@ -83,15 +109,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
-import { useStore } from '../store'
-import { FONT_OPTIONS, SYNTAX_LABELS } from '../types'
-import type { SyntaxColors } from '../types'
-import { roleClass } from '../utils'
-import { useConfirmStore } from '../confirmStore'
+import { ref, reactive, watch, nextTick } from 'vue'
+import { usePresetStore } from '../../stores/presetStore'
+import { FONT_OPTIONS, SYNTAX_LABELS } from '../../types'
+import type { SyntaxColors } from '../../types'
+import { roleClass } from '../../utils'
+import { useConfirmStore } from '../../stores/confirmStore'
 
 const confirmStore = useConfirmStore()
-const store = useStore()
+const store = usePresetStore()
 
 // Local drafts for the two controls that fire continuously while being dragged (range slider,
 // color picker). Binding these straight to store.settings meant every tick of the drag pushed
@@ -120,4 +146,11 @@ function commitColor(key: keyof SyntaxColors) {
   store.settings.syntaxColors[key] = draftColors[key]
   store.saveSettings()
 }
+
+// Prompt modal: autofocus + select-all whenever it opens, matching window.prompt()'s old
+// default text-selected behavior.
+const promptInputRef = ref<HTMLInputElement>()
+watch(() => confirmStore.promptOpen, (open) => {
+  if (open) nextTick(() => { promptInputRef.value?.focus(); promptInputRef.value?.select() })
+})
 </script>

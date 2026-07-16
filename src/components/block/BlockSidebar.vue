@@ -78,15 +78,16 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
-import { useStore } from '../store'
-import type { OrderItem, OrderGroup, FlatNode } from '../types'
-import { usePanelResize } from '../composables/usePanelResize'
-import { getHostDocument, getHostWindow } from '../composables/hostEnv'
-import { roleClass as roleClassOf } from '../utils'
-import { useTabsStore } from '../tabsStore'
+import { usePresetStore } from '../../stores/presetStore'
+import type { OrderItem, OrderGroup, FlatNode } from '../../types'
+import { usePanelResize } from '../../composables/usePanelResize'
+import { getHostDocument, getHostWindow } from '../../composables/hostEnv'
+import { roleClass as roleClassOf } from '../../utils'
+import { useTabsStore } from '../../stores/tabsStore'
+import ListToolbar from '../shared/ListToolbar.vue'
 
 const tabsStore = useTabsStore()
-const store = useStore()
+const store = usePresetStore()
 const listRef = ref<HTMLElement>()
 const dragIdx = ref<number | null>(null)
 const dragOverIdx = ref(-1)
@@ -214,7 +215,11 @@ const resize = usePanelResize({
 function onResizeStart(e: MouseEvent) { resize.onMouseDown(e) }
 watch(() => resize.active.value, (v) => { if (!v) store.saveSettings() })
 
-/* ---- Scroll selected item into view on jump requests ---- */
+/* ---- Scroll selected item into view on jump requests ----
+   Watches tabsStore's per-domain scroll token (tick on any 'block' tab open()/focus(), plus
+   presetStore.ts's search/var-nav jumps calling tabsStore.requestListScroll('block') directly) —
+   see tabsStore.ts's doc comment on listScrollToken. RegexSidebar.vue watches the same
+   mechanism under its own 'regex' key. */
 const itemEls = new Map<number, HTMLElement>()
 function setItemRef(el: any, i: number) {
   if (el) itemEls.set(i, el as HTMLElement)
@@ -224,7 +229,7 @@ function scrollSelectedIntoView() {
   const el = itemEls.get(store.selIdx)
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
 }
-watch(() => store.sidebarJumpToken, () => { nextTick(scrollSelectedIntoView) })
+watch(() => tabsStore.listScrollToken['block'], () => { nextTick(scrollSelectedIntoView) })
 
 /* ---- Drag and drop ----
    NOTE: this used to be native HTML5 DnD (draggable="true" + dragstart/dragover/drop). That

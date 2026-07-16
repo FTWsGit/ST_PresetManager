@@ -9,7 +9,7 @@
         <div class="pm-header">
           <button class="pm-btn accent" @click="store.doSavePreset()">💾 Save{{ store.dirty ? ' *' : '' }}</button>
           <div class="pm-sep"></div>
-          <button class="pm-btn" @click="store.loadFromContext()">🗘 Reload</button>
+          <button class="pm-btn" @click="store.reloadPreset()">🗘 Reload</button>
           <button class="pm-btn" @click="store.copyPanelOpen = true">⇆ Copy Blocks</button>
           <div class="pm-sep"></div>
           <div class="pm-mode-switch">
@@ -35,8 +35,8 @@
         <SearchPanel v-if="store.searchOpen" /> 
 
         <div class="pm-main">
-          <Sidebar v-if="tabsStore.sidebarMode === 'block'" />
-          <RegexSidebarList v-else-if="tabsStore.sidebarMode === 'regex'" />
+          <BlockSidebar v-if="tabsStore.sidebarMode === 'block'" />
+          <RegexSidebar v-else-if="tabsStore.sidebarMode === 'regex'" />
           <div class="pm-editor-col">
             <TabBar />
             <div class="pm-editor-row">
@@ -48,8 +48,12 @@
           <PreviewPanel v-if="store.previewOpen" />
         </div>
 
-        <Modals />
+        <!-- CopyPanel before Modals: CopyPanel is itself a .pm-modal-overlay, and its own
+             confirm/prompt dialogs (reload/remove/close-unsaved) are confirmStore-driven and
+             rendered by Modals below it — Modals needs to be the LATER sibling so its overlay
+             actually paints on top of CopyPanel's overlay instead of underneath it. -->
         <CopyPanel />
+        <Modals />
       </div>
     </Transition>
     <VarPopup />
@@ -57,25 +61,25 @@
 </template>
 
 <script setup lang="ts">
-import { useStore } from './store'
-import SearchPanel from './components/SearchPanel.vue'
-import Sidebar from './components/Sidebar.vue'
-import VarPanel from './components/VarPanel.vue'
-import PreviewPanel from './components/PreviewPanel.vue'
-import Modals from './components/Modals.vue'
-import VarPopup from './components/VarPopup.vue'
-import CopyPanel from './components/CopyPanel.vue'
-import { getHostWindow } from './composables/hostEnv'
-import TabBar from './components/TabBar.vue'
-import { useTabsStore } from './tabsStore'
-import EditorShell from './components/EditorShell.vue'
-import SettingsDock from './components/SettingsDock.vue'
-import RegexSidebarList from './components/RegexSidebarList.vue'
-import { useConfirmStore } from './confirmStore'
+import { usePresetStore } from './stores/presetStore'
+import SearchPanel from './components/block/SearchPanel.vue'
+import BlockSidebar from './components/block/BlockSidebar.vue'
+import VarPanel from './components/block/VarPanel.vue'
+import PreviewPanel from './components/block/PreviewPanel.vue'
+import VarPopup from './components/block/VarPopup.vue'
+import CopyPanel from './components/block/CopyPanel.vue'
+import RegexSidebar from './components/regex/RegexSidebar.vue'
+import Modals from './components/shared/Modals.vue'
+import TabBar from './components/shared/TabBar.vue'
+import EditorShell from './components/shared/EditorShell.vue'
+import SettingsDock from './components/shared/SettingsDock.vue'
+import { useTabsStore } from './stores/tabsStore'
+import { useConfirmStore } from './stores/confirmStore'
+import { esc } from './utils'
 
 const confirmStore = useConfirmStore()
 const tabsStore = useTabsStore()
-const store = useStore()
+const store = usePresetStore()
 
 function openPanel() {
   store.panelOpen = true
@@ -87,29 +91,41 @@ function toggleSearch() {
   if (store.searchOpen) store.doSearch()
 }
 
+// RULE: never call getHostWindow().confirm()/.prompt() — unreliable inside TauriTavern's
+// WebView2 host. Everything goes through confirmStore instead (see confirmStore.ts).
 function onPresetSelect(e: Event) {
   const select = e.target as HTMLSelectElement
   const name = select.value
   if (!name || name === store.presetName) return
-  if (!getHostWindow().confirm(`Switch to preset "${name}"? Any unsaved edits to the current preset will be lost.`)) {
-    select.value = store.presetName // snap the <select> back since it isn't v-model two-way bound
-    return
-  }
-  store.switchPreset(name)
+  confirmStore.ask({
+    title: 'Switch preset?',
+    message: `Switch to preset <strong>${esc(name)}</strong>? Any unsaved edits to the current preset will be lost.`,
+    confirmText: 'Switch',
+    danger: false,
+    onConfirm: () => store.switchPreset(name),
+    // The <select> isn't v-model two-way bound, so the browser already visually switched to
+    // `name` the moment @change fired — if the user cancels, snap it back to what's actually
+    // loaded (nothing else is guaranteed to trigger a re-render in the meantime).
+    onCancel: () => { select.value = store.presetName },
+  })
 }
 
-
 function onNewPreset() {
-  const name = getHostWindow().prompt('新预设名称：', '')
-  if (!name) return
-  if (store.presetList.some(p => p.name === name)) { store.showToast('已存在同名预设'); return }
-  store.createPreset(name)
+  confirmStore.askInput({
+    title: '新预设名称',
+    placeholder: '预设名称',
+    confirmText: '创建',
+    onConfirm: (name) => {
+      if (store.presetList.some(p => p.name === name)) { store.showToast('已存在同名预设'); return }
+      store.createPreset(name)
+    },
+  })
 }
 function onDeletePreset() {
   if (!store.presetName) return
   confirmStore.ask({
     title: 'Delete preset?',
-    message: `This will permanently remove <strong>${store.presetName}</strong>. This cannot be undone.`,
+    message: `This will permanently remove <strong>${esc(store.presetName)}</strong>. This cannot be undone.`,
     onConfirm: () => store.removeCurrentPreset(),
   })
 }

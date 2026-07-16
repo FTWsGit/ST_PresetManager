@@ -13,6 +13,6 @@
 </template>
 
 <script setup lang="ts">
-import { useTabsStore } from '../tabsStore'
+import { useTabsStore } from '../../stores/tabsStore'
 const tabs = useTabsStore()
 </script>

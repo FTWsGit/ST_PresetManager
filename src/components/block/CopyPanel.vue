@@ -20,11 +20,12 @@
               <button class="pm-btn accent" :disabled="!sides.left.dirty" @click="saveSide('left')">💾 Save{{ sides.left.dirty ? ' *' : '' }}</button>
             </div>
             <div class="pm-cp-list">
-              <p v-if="!sides.left.data.prompts.length" class="pm-cp-empty">No blocks</p>
-              <div v-for="b in sides.left.data.prompts" :key="b.identifier" class="pm-cp-item pm-block-item" :class="{ selected: sides.left.sel.has(b.identifier) }" @click="onItemClick('left', b.identifier, $event)">
-                <span class="pm-block-role" :class="roleClass(b.role)">{{ b.role }}</span>
-                <span class="pm-block-name">{{ b.name || b.identifier }}</span>
-                <span class="pm-block-act del" title="Remove from this list" @click.stop="removeBlock('left', b.identifier)">🗑</span>
+              <p v-if="!leftOrdered.length" class="pm-cp-empty">No blocks</p>
+              <div v-for="e in leftOrdered" :key="e.block.identifier" class="pm-cp-item pm-block-item" :class="{ selected: sides.left.sel.has(e.block.identifier) }" @click="onItemClick('left', e.block.identifier, $event)">
+                <span class="pm-block-role" :class="roleClass(e.block.role)">{{ e.block.role }}</span>
+                <span class="pm-block-name">{{ e.block.name || e.block.identifier }}</span>
+                <span v-if="e.hidden" class="pm-hidden-badge" title="不在当前生效顺序里">隐藏</span>
+                <span class="pm-block-act del" title="Remove from this list" @click.stop="removeBlock('left', e.block.identifier)">🗑</span>
               </div>
             </div>
           </template>
@@ -53,11 +54,12 @@
               <button class="pm-btn accent" :disabled="!sides.right.dirty" @click="saveSide('right')">💾 Save{{ sides.right.dirty ? ' *' : '' }}</button>
             </div>
             <div class="pm-cp-list">
-              <p v-if="!sides.right.data.prompts.length" class="pm-cp-empty">No blocks</p>
-              <div v-for="b in sides.right.data.prompts" :key="b.identifier" class="pm-cp-item pm-block-item" :class="{ selected: sides.right.sel.has(b.identifier) }" @click="onItemClick('right', b.identifier, $event)">
-                <span class="pm-block-role" :class="roleClass(b.role)">{{ b.role }}</span>
-                <span class="pm-block-name">{{ b.name || b.identifier }}</span>
-                <span class="pm-block-act del" title="Remove from this list" @click.stop="removeBlock('right', b.identifier)">🗑</span>
+              <p v-if="!rightOrdered.length" class="pm-cp-empty">No blocks</p>
+              <div v-for="e in rightOrdered" :key="e.block.identifier" class="pm-cp-item pm-block-item" :class="{ selected: sides.right.sel.has(e.block.identifier) }" @click="onItemClick('right', e.block.identifier, $event)">
+                <span class="pm-block-role" :class="roleClass(e.block.role)">{{ e.block.role }}</span>
+                <span class="pm-block-name">{{ e.block.name || e.block.identifier }}</span>
+                <span v-if="e.hidden" class="pm-hidden-badge" title="不在当前生效顺序里">隐藏</span>
+                <span class="pm-block-act del" title="Remove from this list" @click.stop="removeBlock('right', e.block.identifier)">🗑</span>
               </div>
             </div>
           </template>
@@ -72,15 +74,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
-import { useStore } from '../store'
-import * as ST from '../sillytavern'
-import type { PresetListEntry } from '../sillytavern'
-import type { PresetData, PresetBlock, OrderItem } from '../types'
-import { applyMultiSelect, roleClass } from '../utils'
-import { getHostWindow } from '../composables/hostEnv'
+import { ref, reactive, computed, watch } from 'vue'
+import { usePresetStore } from '../../stores/presetStore'
+import { useConfirmStore } from '../../stores/confirmStore'
+import * as ST from '../../sillytavern'
+import type { PresetListEntry } from '../../sillytavern'
+import type { PresetData, PresetBlock, OrderItem } from '../../types'
+import { applyMultiSelect, roleClass, esc, orderedPromptsWithHidden } from '../../utils'
 
-const store = useStore()
+const store = usePresetStore()
+const confirmStore = useConfirmStore()
 
 const presetOptions = ref<PresetListEntry[]>([])
 
@@ -102,6 +105,12 @@ const sides = reactive<Record<Side, SideState>>({
 })
 const other = (side: Side): Side => (side === 'left' ? 'right' : 'left')
 
+// Blocks in their actual generation order (prompt_order), not raw prompts[] storage order — see
+// utils.ts's orderedPromptsWithHidden() doc comment. Hidden (not-in-order) blocks are appended
+// at the end and flagged so the UI can mark them.
+const leftOrdered = computed(() => sides.left.data ? orderedPromptsWithHidden(sides.left.data) : [])
+const rightOrdered = computed(() => sides.right.data ? orderedPromptsWithHidden(sides.right.data) : [])
+
 // Re-list available presets fresh every time the panel opens — deliberately independent of the
 // main editor's store.presetList (which may be stale, or never populated if the main panel's
 // list wasn't opened this session).
@@ -118,20 +127,32 @@ function genId() {
 function loadSide(side: Side) {
   const s = sides[side]
   if (!s.name) return
-  if (s.dirty && !getHostWindow().confirm(`Reloading "${s.name}" will discard unsaved copy/delete changes on this side. Continue?`)) return
-  try {
-    const data = ST.getPresetByName(s.name)
-    if (!data) { store.showToast('Preset not found: ' + s.name); return }
-    s.data = data; s.sel = new Set(); s.anchor = null; s.dirty = false
-  } catch (e: any) { store.showToast('Load failed: ' + (e?.message || e)) }
+  const doLoad = () => {
+    try {
+      const data = ST.getPresetByName(s.name)
+      if (!data) { store.showToast('Preset not found: ' + s.name); return }
+      s.data = data; s.sel = new Set(); s.anchor = null; s.dirty = false
+    } catch (e: any) { store.showToast('Load failed: ' + (e?.message || e)) }
+  }
+  if (!s.dirty) { doLoad(); return }
+  confirmStore.ask({
+    title: 'Reload preset?',
+    message: `Reloading <strong>${esc(s.name)}</strong> will discard unsaved copy/delete changes on this side.`,
+    confirmText: 'Reload',
+    onConfirm: doLoad,
+  })
 }
 
-// Same ctrl/shift/plain click model as the main editor's sidebar (Sidebar.vue → store.ts's
+// Same ctrl/shift/plain click model as the main editor's sidebar (BlockSidebar.vue → store's
 // selectBlock) — see applyMultiSelect's doc comment in utils.ts for the exact semantics.
+// `all` must be in the same VISUAL order the list renders in (leftOrdered/rightOrdered), not raw
+// prompts[] storage order — otherwise shift-range-select would pick the wrong span of rows even
+// after the display order itself was fixed.
 function onItemClick(side: Side, id: string, e: MouseEvent) {
   const s = sides[side]
   if (!s.data) return
-  const all = s.data.prompts.map(b => b.identifier)
+  const ordered = side === 'left' ? leftOrdered.value : rightOrdered.value
+  const all = ordered.map(x => x.block.identifier)
   const next = applyMultiSelect(
     { selected: s.sel, anchor: s.anchor },
     id, all,
@@ -151,7 +172,8 @@ function clearSel(side: Side) {
 }
 
 /** prompt_order in a raw PresetData is always a flat array (groups are just `_gid`-tagged
- *  entries within it, see store.ts's importOrderWithGroups/exportOrder) — no tree to build here. */
+ *  entries within it, see presetStore.ts's importOrderWithGroups/exportOrder) — no tree to build
+ *  here. */
 function ensureOrder(data: PresetData): OrderItem[] {
   if (!Array.isArray(data.prompt_order) || !data.prompt_order.length) data.prompt_order = [{ order: [] }]
   if (!Array.isArray(data.prompt_order[0].order)) data.prompt_order[0].order = []
@@ -167,7 +189,12 @@ function copy(from: Side) {
   const dstOrder = ensureOrder(dst.data)
   const existingIds = new Set(dst.data.prompts.map(p => p.identifier))
   let n = 0
-  for (const b of src.data.prompts) {
+  // Walk the SOURCE's visual (ordered) sequence, not prompts[] storage order, so a multi-select
+  // copy lands on the destination side in the order you saw/selected it in, not whatever order
+  // ST happened to store the source blocks in internally.
+  const srcOrdered = from === 'left' ? leftOrdered.value : rightOrdered.value
+  for (const entry of srcOrdered) {
+    const b = entry.block
     if (!src.sel.has(b.identifier)) continue
     const clone: PresetBlock = JSON.parse(JSON.stringify(b))
     // Always mint a fresh identifier on the destination side — reusing the source's own id
@@ -189,24 +216,30 @@ function copy(from: Side) {
 function removeBlock(side: Side, id: string) {
   const s = sides[side]
   if (!s.data) return
-  const pi = s.data.prompts.findIndex(p => p.identifier === id)
-  if (pi >= 0) s.data.prompts.splice(pi, 1)
-  const order = ensureOrder(s.data)
-  for (let i = order.length - 1; i >= 0; i--) if (order[i].identifier === id) order.splice(i, 1)
-  if (s.sel.has(id)) {
-    const next = new Set(s.sel); next.delete(id)
-    s.sel = next
-  }
-  if (s.anchor === id) s.anchor = null
-  s.dirty = true
+  const block = s.data.prompts.find(p => p.identifier === id)
+  confirmStore.ask({
+    title: 'Remove block?',
+    message: `Remove <strong>${esc(block?.name || id)}</strong> from this list? This only affects the in-progress copy session — nothing is written to disk until you hit Save.`,
+    confirmText: 'Remove',
+    onConfirm: () => {
+      const data = s.data!
+      const pi = data.prompts.findIndex(p => p.identifier === id)
+      if (pi >= 0) data.prompts.splice(pi, 1)
+      const order = ensureOrder(data)
+      for (let i = order.length - 1; i >= 0; i--) if (order[i].identifier === id) order.splice(i, 1)
+      if (s.sel.has(id)) { const next = new Set(s.sel); next.delete(id); s.sel = next }
+      if (s.anchor === id) s.anchor = null
+      s.dirty = true
+    },
+  })
 }
 
 async function saveSide(side: Side) {
   const s = sides[side]
   if (!s.data || !s.name) return
   try {
-    // Same rule as store.ts's doSavePreset(): never hand ST a live reactive object, always a
-    // plain deep clone (structuredClone inside ST's savePreset can't clone a Vue Proxy).
+    // Same rule as presetStore.ts's doSavePreset(): never hand ST a live reactive object,
+    // always a plain deep clone (structuredClone inside ST's savePreset can't clone a Vue Proxy).
     await ST.savePresetAs(s.name, JSON.parse(JSON.stringify(s.data)))
     s.dirty = false
     store.refreshPresetList()
@@ -219,9 +252,12 @@ async function saveSide(side: Side) {
 }
 
 function close() {
-  if (sides.left.dirty || sides.right.dirty) {
-    if (!getHostWindow().confirm('You have unsaved copy/delete changes on one or both sides. Close anyway?')) return
-  }
-  store.copyPanelOpen = false
+  if (!sides.left.dirty && !sides.right.dirty) { store.copyPanelOpen = false; return }
+  confirmStore.ask({
+    title: 'Close without saving?',
+    message: 'You have unsaved copy/delete changes on one or both sides.',
+    confirmText: 'Close',
+    onConfirm: () => { store.copyPanelOpen = false },
+  })
 }
 </script>

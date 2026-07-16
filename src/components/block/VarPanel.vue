@@ -33,11 +33,11 @@
 
 <script setup lang="ts">
 import { watch } from 'vue'
-import { useStore } from '../store'
-import { usePanelResize } from '../composables/usePanelResize'
-import { varOpBadge } from '../utils'
+import { usePresetStore } from '../../stores/presetStore'
+import { usePanelResize } from '../../composables/usePanelResize'
+import { varOpBadge } from '../../utils'
 
-const store = useStore()
+const store = usePresetStore()
 
 const resize = usePanelResize({
   getWidth: () => store.settings.varPanelWidth,

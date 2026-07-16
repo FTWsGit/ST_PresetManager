@@ -1,43 +1,82 @@
+<!--
+  Generic macro-syntax textarea: line numbers + syntax-highlight overlay + fast canvas-based line
+  wrap measurement + bracket/quote auto-close + optional jump-to-position + optional var-click
+  detection. This is the machinery that used to live entirely inside Editor.vue (the block content
+  editor) — extracted so RegexContentEditor.vue's replaceString editor gets the same line numbers,
+  highlighting, and font-size/family (via the same --pm-fs/--pm-ff CSS vars) instead of being a
+  bare unstyled <textarea>. See PROJECT_HANDOFF.md 架构总览 2 and the former "已知的视觉不一致"
+  section — this is what closes that gap.
+
+  DELIBERATELY DOMAIN-AGNOSTIC: this component has no idea what a "block" or a "regex script" is.
+  It knows about ST's macro syntax ({{...}}, {{setvar/addvar/getvar}}) because that's genuinely
+  shared syntax between preset block content AND regex replaceString, not because it's coupled to
+  either domain's data model. It never touches any Pinia store directly — search-result highlight,
+  jump requests, and var-click handling are all opt-in via props/emits, so a caller that doesn't
+  need them (RegexContentEditor) just doesn't pass them.
+
+  v-model'd on `modelValue` (plain string). Content sync direction:
+   - typing -> emits 'update:modelValue' on every keystroke (same frequency the old Editor.vue's
+     content ref did), debounced/idle-scheduled work (highlight, line numbers) happens internally,
+     never blocks the emit.
+   - `modelValue` changed FROM OUTSIDE (block switched, Replace All ran, regex tab switched) ->
+     detected by comparing against the component's own last-known value; refreshes immediately
+     (not idle-scheduled) since this isn't the typing hot path, and re-measures cursor position.
+-->
 <template>
-  <div class="pm-editor-panel">
-    <div class="pm-editor-meta">
-      <label>Name</label>
-      <input type="text" :value="name" @input="onNameInput" />
-      <label>Role</label>
-      <select :value="role" @change="onRoleChange">
-        <option value="system">system</option>
-        <option value="user">user</option>
-        <option value="assistant">assistant</option>
-      </select>
+  <div class="pm-editor-content" ref="editorWrap">
+    <div class="pm-line-nums" ref="lnRef">
+      <div v-for="(h, i) in lineHeights" :key="i" class="ln" :class="lineClass(i)" :style="{ height: h + 'px' }">{{ i + 1 }}</div>
     </div>
-    <div class="pm-editor-content" ref="editorWrap">
-      <div class="pm-line-nums" ref="lnRef">
-        <div v-for="(h, i) in lineHeights" :key="i" class="ln" :class="lineClass(i)" :style="{ height: h + 'px' }">{{ i + 1 }}</div>
-      </div>
-      <div class="pm-editor-wrap">
-        <pre class="pm-editor-hl" ref="hlRef" v-html="hlHtml"></pre>
-        <textarea class="pm-editor-ta" ref="taRef" spellcheck="false"
-                  :value="content" @input="onInput" @scroll="syncScroll"
-                  @keydown="onKeydown" @click="onClick" @keyup="updateCursor"></textarea>
-        <!-- hidden mirror used to measure the true wrapped height of each line (handles CJK / tabs / mixed width) -->
-        <div class="pm-line-mirror" ref="mirrorRef" aria-hidden="true"></div>
-      </div>
+    <div class="pm-editor-wrap">
+      <pre class="pm-editor-hl" ref="hlRef" v-html="hlHtml"></pre>
+      <textarea class="pm-editor-ta" ref="taRef" spellcheck="false" :placeholder="placeholder"
+                :value="content" @input="onInput" @scroll="syncScroll"
+                @keydown="onKeydown" @click="onClick" @keyup="updateCursor"></textarea>
+      <!-- hidden mirror used to measure the true wrapped height of each line (handles CJK / tabs / mixed width) -->
+      <div class="pm-line-mirror" ref="mirrorRef" aria-hidden="true"></div>
     </div>
-    <div class="pm-statusbar">
-      <span>{{ cursorText }}</span>
-      <span>{{ content.length }} chars</span>
-      <span>{{ lineCount }} lines</span>
-    </div>
+  </div>
+  <div v-if="showStatusbar" class="pm-statusbar">
+    <span>{{ cursorText }}</span>
+    <span>{{ content.length }} chars</span>
+    <span>{{ lineCount }} lines</span>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { useStore } from '../store'
-import { highlightContent } from '../composables/useHighlight'
-import { getHostWindow, getHostDocument } from '../composables/hostEnv'
+import { highlightContent } from '../../composables/useHighlight'
+import { getHostWindow, getHostDocument } from '../../composables/hostEnv'
 
-const store = useStore()
+interface JumpRequest { line: number; col: number; len: number; token: number; keepFocus: boolean }
+
+const props = withDefaults(defineProps<{
+  modelValue: string
+  /** External "please move the caret here" request (search results, var-nav). Omit if the
+   *  caller has no such concept (e.g. RegexContentEditor). */
+  jump?: JumpRequest | null
+  /** Per-line extra CSS class for the line-number gutter (search-hit/search-cur highlighting).
+   *  Omit for editors with no concept of "results" to highlight. */
+  lineClass?: (line: number) => string
+  /** Whether clicking a {{setvar/addvar/getvar::name}} token should emit 'var-click'. Off by
+   *  default — only the block content editor currently has a var-nav popup to feed. */
+  enableVarClick?: boolean
+  showStatusbar?: boolean
+  placeholder?: string
+}>(), {
+  jump: null,
+  lineClass: () => '',
+  enableVarClick: false,
+  showStatusbar: true,
+  placeholder: '',
+})
+
+const emit = defineEmits<{
+  'update:modelValue': [string]
+  'var-click': [payload: { varName: string; cursorPos: number; pos: { top: number; left: number } }]
+  'var-click-miss': []
+}>()
+
 const taRef = ref<HTMLTextAreaElement>()
 const hlRef = ref<HTMLPreElement>()
 const lnRef = ref<HTMLElement>()
@@ -50,100 +89,66 @@ const mirrorRef = ref<HTMLDivElement>()
 // `timeout` option). Lower = catches up sooner under sustained heavy typing, at the cost of
 // competing more with input rendering; higher = stays out of the way longer, but the highlighted
 // view can lag further behind while typing continuously.
-//   Try: 50 (catches up fast), 100 (very lenient, for huge blocks / weak devices).
 const RENDER_IDLE_TIMEOUT_MS = 30
 // RESIZE_DEBOUNCE_MS: how long to wait after the editor's size last changed (e.g. mid-drag on
-// the sidebar/var-nav/preview width handles) before re-measuring line-wrap. Higher = fewer
-// recomputes while actively dragging a width handle, but line numbers visibly lag the resize
-// by a bit more; lower = line numbers track the drag more closely, more recomputes during drag.
-//   Try: 60, 100 (default), 150.
+// the sidebar/var-nav/preview width handles) before re-measuring line-wrap.
 const RESIZE_DEBOUNCE_MS = 100
 
-const content = ref('')
-const name = ref('')
-const role = ref<'system' | 'user' | 'assistant'>('system')
+const content = ref(props.modelValue)
 const cursorLine = ref(1)
 const cursorCol = ref(1)
 const cursorText = computed(() => `Ln ${cursorLine.value}, Col ${cursorCol.value}`)
 const lineCount = computed(() => 1 + (content.value.match(/\n/g) || []).length)
 
 const lineHeights = ref<number[]>([])
-let autoClosed = false
 
 // Highlight — a manually-updated ref rather than a computed(), so its (comparatively expensive)
 // recompute + innerHTML patch can be coalesced into the same debounced/batched update as line
 // numbers and cursor position, instead of firing synchronously on every single keystroke.
-//
-// Declared here, BEFORE the `immediate: true` watcher below: that watcher calls loadBlock() ->
-// refreshHighlight() synchronously the moment watch() runs (immediate watchers fire during
-// setup, not on next tick), so refreshHighlight's reference to hlHtml would otherwise hit it
-// while it's still in the temporal dead zone (declared later as `const`, not yet initialized) —
-// "Cannot access 'hlHtml' before initialization". Function declarations like refreshHighlight
-// itself are hoisted so calling them early is fine; the `const` they close over is not.
 const hlHtml = ref('')
 function refreshHighlight() { hlHtml.value = highlightContent(content.value) + '\n' }
+refreshHighlight()
 
-// Sync block → editor
-watch(() => store.selIdx, () => { loadBlock() }, { immediate: true })
-watch(() => store.currentBlock?.content, (v) => {
-  if (v !== undefined && v !== content.value) {
-    content.value = v
-    refreshHighlight() // external content change (e.g. Replace All) — reflect it immediately, not debounced
-    nextTick(() => { updateLineNums() })
-  }
+// External changes to modelValue (block switched, Replace All, regex tab switched, ...) —
+// detected because they don't match our own last-emitted value. Unlike the typing path, this
+// refreshes immediately: it's not the typing hot path, and the caller usually wants to see the
+// new content rendered correctly right away rather than mid-idle-callback.
+watch(() => props.modelValue, (v) => {
+  if (v === content.value) return
+  content.value = v
+  refreshHighlight()
+  nextTick(() => { updateLineNums(); updateCursor() })
 })
 
-// React to search / var-nav jump requests
-watch(() => store.editorJump, (jump) => {
+watch(() => props.jump, (jump) => {
   if (!jump || !taRef.value) return
   nextTick(() => moveCursorTo(jump.line, jump.col, jump.len, jump.keepFocus))
 })
 
-function loadBlock() {
-  const b = store.currentBlock
-  if (b) { content.value = b.content || ''; name.value = b.name || ''; role.value = b.role || 'system' }
-  else { content.value = ''; name.value = ''; role.value = 'system' }
-  store.hideVarPopup()
-  refreshHighlight() // one-off action, not the typing hot path — update immediately, no debounce
-  nextTick(() => { updateLineNums(); updateCursor() })
-}
-
-function onNameInput(e: Event) { name.value = (e.target as HTMLInputElement).value; if (store.currentBlock) store.currentBlock.name = name.value }
-function onRoleChange(e: Event) { role.value = (e.target as HTMLSelectElement).value as any; if (store.currentBlock) store.currentBlock.role = role.value }
-
 function onInput(e: Event) {
   content.value = (e.target as HTMLTextAreaElement).value
-  if (store.currentBlock) store.currentBlock.content = content.value
-  store.hideVarPopup()
+  emit('update:modelValue', content.value)
   scheduleRenderUpdate()
 }
 
 function emitContent() {
   content.value = taRef.value?.value || ''
-  if (store.currentBlock) store.currentBlock.content = content.value
+  emit('update:modelValue', content.value)
   scheduleRenderUpdate()
 }
 
 // ---- Fast text measurement ----
-// The previous approach measured each line's wrapped height by writing it into a hidden DOM
-// element and reading offsetHeight back — that forces a synchronous browser reflow, and doing
-// it once PER LINE, on every keystroke, every block switch, and every resize-drag tick, was the
-// actual cause of the input/open/resize lag: for a block with many lines this could mean dozens
-// of forced reflows per frame. A <canvas> context's measureText() gives the same information
-// (rendered text width) without ever touching layout, so it's orders of magnitude cheaper — this
-// mirrors MiMo's original approach, which never had this lag in the first place.
+// Measuring each line's wrapped height by writing it into a hidden DOM element and reading
+// offsetHeight forces a synchronous browser reflow — doing that once PER LINE, on every
+// keystroke, would be the dominant cost for any block with many lines. A <canvas> context's
+// measureText() gives the same information (rendered text width) without ever touching layout.
 let measureCanvas: HTMLCanvasElement | null = null
 let measureCtx: CanvasRenderingContext2D | null = null
 function getMeasureCtx(): CanvasRenderingContext2D {
   if (!measureCtx) {
     // IMPORTANT: create this via the host document, not the bare global `document`. A canvas
-    // 2D context resolves font names (including our @imported 'JetBrains Mono'/'Fira Code')
-    // against whichever document created the canvas. Our font is loaded into the HOST
-    // document's stylesheet (see main.ts's style injection) — never into the iframe's own
-    // document. A canvas created via the iframe's `document` would silently fail to find those
-    // fonts and fall back to a generic monospace with different character-width metrics,
-    // throwing off every measurement that depends on it (this is what caused the var-click
-    // popup to land near the right edge instead of near the click).
+    // 2D context resolves font names against whichever document created the canvas, and our
+    // fonts are only loaded into the HOST document's stylesheet (see main.ts's style injection).
     measureCanvas = getHostDocument().createElement('canvas')
     measureCtx = measureCanvas.getContext('2d')!
   }
@@ -160,8 +165,7 @@ function updateMeasureFont(): CanvasRenderingContext2D {
 }
 
 // Single-line height (in px) still comes from one real DOM measurement — canvas can't give us
-// the CSS line-height directly — but it's cached and only re-measured when the font actually
-// changes, instead of once per line on every call.
+// the CSS line-height directly — but it's cached and only re-measured when the font changes.
 let cachedLH = -1
 function measureSingleLineHeight(): number {
   if (cachedLH > 0) return cachedLH
@@ -196,14 +200,11 @@ function updateLineNums() {
 }
 
 // Schedules the (comparatively expensive, for big blocks) highlight + line-number + cursor
-// recompute for genuine browser idle time rather than "right before the next paint"
-// (requestAnimationFrame). This distinction matters: rAF callbacks run as part of the same
-// rendering pipeline that's also responsible for painting the character you just typed — if the
-// rAF callback's work takes long enough, it can itself delay that paint, which is exactly what
-// produces the "text appears in chunks" feeling under sustained fast typing. requestIdleCallback
-// explicitly only runs when the browser has spare time *after* input/rendering work is handled,
-// so it can never compete with displaying what you just typed. (Safari doesn't implement
-// requestIdleCallback as of this writing, hence the setTimeout fallback below.)
+// recompute for genuine browser idle time rather than "right before the next paint". rAF
+// callbacks run as part of the same rendering pipeline responsible for painting the character
+// you just typed — requestIdleCallback explicitly only runs after input/rendering work is
+// handled, so it can never compete with displaying what you just typed. (Safari doesn't
+// implement requestIdleCallback as of this writing, hence the setTimeout fallback.)
 const ric: (cb: () => void, opts?: { timeout: number }) => number =
   (typeof (window as any).requestIdleCallback === 'function')
     ? (window as any).requestIdleCallback.bind(window)
@@ -224,16 +225,6 @@ function scheduleRenderUpdate() {
   }, { timeout: RENDER_IDLE_TIMEOUT_MS })
 }
 
-function lineClass(ln: number) {
-  if (!store.searchResults.length) return ''
-  const blockId = store.currentBlock?.identifier
-  if (!blockId) return ''
-  const hit = store.searchResults.some(r => r.blockId === blockId && r.line === ln)
-  if (!hit) return ''
-  const cur = store.searchIdx >= 0 && store.searchResults[store.searchIdx]?.blockId === blockId && store.searchResults[store.searchIdx]?.line === ln
-  return cur ? 'search-cur' : 'search-hit'
-}
-
 // Scroll sync
 function syncScroll() {
   if (!taRef.value || !hlRef.value || !lnRef.value) return
@@ -249,7 +240,7 @@ function updateCursor() {
   cursorCol.value = pos - before.lastIndexOf('\n')
 }
 
-function onClick() { updateCursor(); checkVarClick() }
+function onClick() { updateCursor(); if (props.enableVarClick) checkVarClick() }
 
 function getLineColPos(line: number, col: number): number {
   const ls = content.value.split('\n')
@@ -271,10 +262,9 @@ function moveCursorTo(line: number, col: number, len: number, keepFocus = false)
   updateCursor()
 }
 
-// Var click → show a small floating popup listing every occurrence of that variable, but only
-// when the click lands precisely on the variable NAME itself — not anywhere else in the macro
-// (e.g. clicking inside the value of a setvar, or the keyword, or the braces, should NOT open
-// it). Ported from MiMo's getVarNameAtPos.
+// Var click → locate the {{setvar/addvar/getvar::name}} token under the click, but only when
+// the click lands precisely on the variable NAME itself (not the keyword, braces, or a setvar's
+// value). Ported from Editor.vue's original getVarNameAtPos, unchanged.
 function getVarNameAtPos(text: string, pos: number): { varName: string; type: string; pos: number } | null {
   let depth = 0, os = -1, ois = -1, i = 0
   while (i < text.length) {
@@ -310,13 +300,9 @@ function getVarNameAtPos(text: string, pos: number): { varName: string; type: st
 }
 
 // Finds the on-screen (viewport) coordinates of a given character offset within the textarea,
-// accounting for real word-wrapping — done by mirroring the text-up-to-that-offset into the
-// hidden measurement element (which shares the textarea's exact font/padding/width/wrap
-// settings) with a zero-width marker span at the end, then reading that marker's real
-// getBoundingClientRect(). This is the standard "textarea caret position" technique: since it's
-// driven by the browser's own layout engine, it's correct for wrapped lines in a way that a
-// character-counting or unwrapped-width approximation can't be — canvas measureText() gives a
-// line's *total* width, not which wrapped visual row a given offset falls on.
+// accounting for real word-wrapping — mirrors the text-up-to-that-offset into the hidden
+// measurement element (shares the textarea's exact font/padding/width/wrap settings) with a
+// zero-width marker span at the end, then reads that marker's real getBoundingClientRect().
 function getCaretCoords(pos: number): { top: number; left: number } | null {
   const ta = taRef.value, mirror = mirrorRef.value
   if (!ta || !mirror) return null
@@ -336,7 +322,7 @@ function checkVarClick() {
   if (!taRef.value) return
   const info = getVarNameAtPos(taRef.value.value, taRef.value.selectionStart)
   if (info) openVarPopupAt(info.varName.trim(), taRef.value.selectionStart)
-  else store.hideVarPopup()
+  else emit('var-click-miss')
 }
 
 function openVarPopupAt(varName: string, cursorPos: number) {
@@ -356,17 +342,13 @@ function openVarPopupAt(varName: string, cursorPos: number) {
   left = Math.max(8, Math.min(left, hostWin.innerWidth - 380))
   if (top + 260 > hostWin.innerHeight) top = Math.max(8, coords.top - ta.scrollTop - 250)
 
-  store.showVarPopup(varName, store.selIdx, cursorPos, { top, left })
+  emit('var-click', { varName, cursorPos, pos: { top, left } })
 }
 
-// Shared by the Backspace-pair-delete and wrap-selection branches below — the two used to be
-// separately (but identically) declared inline as 'pairs' and 'wp'. Deliberately does NOT cover
-// the "open a new pair" branches further down ('{' has its own {{}} macro nesting special-case,
-// and the plain-bracket-open / quote-open branches intentionally use narrower subsets) — this map
-// is only for "given an already-adjacent open+close pair, do they match".
+// Bracket/quote pairing, matching MiMo behavior 1:1 — entirely generic text-editing behavior,
+// not coupled to any domain's data model.
 const BRACKET_PAIR_MAP: Record<string, string> = { '{': '}', '(': ')', '[': ']', '<': '>', '"': '"', "'": "'" }
 
-// Tab & Auto-close (bracket/quote pairing, matching MiMo behavior 1:1)
 function onKeydown(e: KeyboardEvent) {
   const ta = taRef.value!; const pos = ta.selectionStart, end = ta.selectionEnd, val = ta.value, hasSel = pos !== end
 
@@ -375,10 +357,10 @@ function onKeydown(e: KeyboardEvent) {
   // Backspace between an adjacent pair deletes both sides together (e.g. {{|}} -> |)
   if (e.key === 'Backspace' && !hasSel && pos > 0 && pos < val.length) {
     if (pos >= 2 && pos + 1 < val.length && val.substring(pos - 2, pos) === '{{' && val.substring(pos, pos + 2) === '}}') {
-      e.preventDefault(); ta.value = val.substring(0, pos - 2) + val.substring(pos + 2); ta.selectionStart = ta.selectionEnd = pos - 2; autoClosed = true; emitContent(); updateCursor(); return
+      e.preventDefault(); ta.value = val.substring(0, pos - 2) + val.substring(pos + 2); ta.selectionStart = ta.selectionEnd = pos - 2; emitContent(); updateCursor(); return
     }
     const pv = val[pos - 1], nx = val[pos]
-    if (BRACKET_PAIR_MAP[pv] === nx) { e.preventDefault(); ta.value = val.substring(0, pos - 1) + val.substring(pos + 1); ta.selectionStart = ta.selectionEnd = pos - 1; autoClosed = true; emitContent(); updateCursor(); return }
+    if (BRACKET_PAIR_MAP[pv] === nx) { e.preventDefault(); ta.value = val.substring(0, pos - 1) + val.substring(pos + 1); ta.selectionStart = ta.selectionEnd = pos - 1; emitContent(); updateCursor(); return }
   }
 
   // Wrap selection with bracket/quote pair
@@ -388,7 +370,7 @@ function onKeydown(e: KeyboardEvent) {
       const s = val.substring(pos, end)
       ta.value = val.substring(0, pos) + e.key + s + BRACKET_PAIR_MAP[e.key] + val.substring(end)
       ta.selectionStart = pos + 1; ta.selectionEnd = end + 1
-      autoClosed = true; emitContent(); updateCursor()
+      emitContent(); updateCursor()
     }
     return
   }
@@ -410,13 +392,13 @@ function onKeydown(e: KeyboardEvent) {
     } else {
       ta.value = val.substring(0, pos) + '{}' + val.substring(pos); ta.selectionStart = ta.selectionEnd = pos + 1
     }
-    autoClosed = true; emitContent(); updateCursor(); return
+    emitContent(); updateCursor(); return
   }
 
   const bp: Record<string, string> = { '(': ')', '[': ']', '<': '>' }
-  if (bp[e.key]) { e.preventDefault(); ta.value = val.substring(0, pos) + e.key + bp[e.key] + val.substring(pos); ta.selectionStart = ta.selectionEnd = pos + 1; autoClosed = true; emitContent(); updateCursor(); return }
+  if (bp[e.key]) { e.preventDefault(); ta.value = val.substring(0, pos) + e.key + bp[e.key] + val.substring(pos); ta.selectionStart = ta.selectionEnd = pos + 1; emitContent(); updateCursor(); return }
 
-  if (e.key === '"' || e.key === "'") { e.preventDefault(); ta.value = val.substring(0, pos) + e.key + e.key + val.substring(pos); ta.selectionStart = ta.selectionEnd = pos + 1; autoClosed = true; emitContent(); updateCursor(); return }
+  if (e.key === '"' || e.key === "'") { e.preventDefault(); ta.value = val.substring(0, pos) + e.key + e.key + val.substring(pos); ta.selectionStart = ta.selectionEnd = pos + 1; emitContent(); updateCursor(); return }
 }
 
 // ---- ResizeObserver: re-measure line numbers when the editor is resized (e.g. sidebar/panel drag) ----
@@ -429,14 +411,18 @@ onMounted(() => {
     roTimer = setTimeout(() => { updateLineNums() }, RESIZE_DEBOUNCE_MS)
   })
   if (taRef.value) ro!.observe(taRef.value)
+  nextTick(() => { updateLineNums(); updateCursor() })
 })
 onUnmounted(() => { if (ro) ro.disconnect(); if (pendingIdle) cic(pendingIdle) })
 
-// Re-measure when font settings change — must force past the memoization guards below, since
-// text content and container width can both be unchanged while only the font itself changed.
-watch(() => [store.settings.editorFontSize, store.settings.editorFontFamily], () => {
+// Re-measure when the font CSS vars change (Settings dialog font-size/family). Unlike Editor.vue's
+// old version (which watched store.settings directly), this just re-measures on any resize of the
+// textarea itself PLUS exposes refreshFont() for a caller that wants to force it explicitly — a
+// font change doesn't resize the element, so the ResizeObserver above won't catch it on its own.
+function refreshFont() {
   cachedLH = -1
   lastLNText = null
   nextTick(() => updateLineNums())
-})
+}
+defineExpose({ refreshFont })
 </script>

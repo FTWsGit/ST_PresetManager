@@ -30,6 +30,25 @@ export const useTabsStore = defineStore('tabs', () => {
   const sidebarMode = ref<string>('block')
   function setSidebarMode(mode: string) { sidebarMode.value = mode }
 
+  /** Per-domain "please scroll your selected item into view" signal — domain-agnostic replacement
+   *  for what used to be store.ts's block-only `sidebarJumpToken`/`requestSidebarScroll()`. Each
+   *  domain's sidebar list (Sidebar.vue for 'block', RegexSidebarList.vue for 'regex', ...) watches
+   *  only its own `listScrollToken[domain]` counter and scrolls its own currently-active item into
+   *  view when it ticks.
+   *
+   *  Lives here (tabs store) rather than in store.ts (main) because it's UI-layout state about
+   *  tabs/sidebars, not preset data, and because it needs to fire for ANY domain, not just blocks
+   *  — see PROJECT_HANDOFF.md 架构总览 1/2. `open()` and `focus()` below both trigger it
+   *  automatically, so callers that open/focus a tab never need to remember to request a scroll
+   *  themselves: the two are inherently the same user action ("show me this item"). Domain call
+   *  sites that jump WITHOUT going through open()/focus() (search-result jump, var-nav jump — both
+   *  stay within an already-active block tab) call requestListScroll('block') directly from
+   *  store.ts. */
+  const listScrollToken = ref<Record<string, number>>({})
+  function requestListScroll(domain: string) {
+    listScrollToken.value[domain] = (listScrollToken.value[domain] || 0) + 1
+  }
+
   /** 打开一个标签。已经开着就只 focus，不重复插入、也不挪到末尾——不然每次点一个已经打开的
    *  标签，它在标签栏里的位置还会跳来跳去，体验会很怪。label 允许在已存在时刷新（比如 block
    *  改名之后再从 sidebar 点开，标签上的文字要跟着更新）。 */
@@ -39,6 +58,7 @@ export const useTabsStore = defineStore('tabs', () => {
     if (existing) existing.label = tab.label
     else tabs.value.push(tab)
     activeId.value = id
+    requestListScroll(tab.domain)
   }
 
   function close(domain: string, key: string) {
@@ -70,7 +90,10 @@ export const useTabsStore = defineStore('tabs', () => {
 
   function focus(domain: string, key: string) {
     const id = domain + ':' + key
-    if (tabs.value.some(t => tabId(t) === id)) activeId.value = id
+    if (tabs.value.some(t => tabId(t) === id)) {
+      activeId.value = id
+      requestListScroll(domain)
+    }
   }
 
   function isOpen(domain: string, key: string): boolean {
@@ -78,5 +101,5 @@ export const useTabsStore = defineStore('tabs', () => {
   }
 
 
-  return { tabs, activeId, activeTab, open, close, closeAll, closeDomain, focus, isOpen, sidebarMode, setSidebarMode, settingsDockOpen, toggleSettingsDock}
+  return { tabs, activeId, activeTab, open, close, closeAll, closeDomain, focus, isOpen, sidebarMode, setSidebarMode, settingsDockOpen, toggleSettingsDock, listScrollToken, requestListScroll }
 })

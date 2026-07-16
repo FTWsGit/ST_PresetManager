@@ -1,3 +1,5 @@
+import type { PresetData, PresetBlock } from './types'
+
 export function esc(t: string): string {
   return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
@@ -25,6 +27,47 @@ export function varOpBadge(type: 'setvar' | 'addvar' | 'get'): { cls: string; la
 export function roleClass(role: string | undefined, prefix = ''): string {
   const suffix = role === 'user' ? 'user' : role === 'assistant' ? 'asst' : 'sys'
   return prefix + suffix
+}
+
+export interface OrderedBlockEntry { block: PresetBlock; hidden: boolean }
+
+/** Flattens a PresetData's prompt_order (which may contain _gid-tagged group entries, see
+ *  store.ts's importOrderWithGroups/exportOrder) into a plain, VISUALLY ORDERED list of blocks —
+ *  the actual generation order, ignoring group boundaries entirely (callers that only need "top
+ *  to bottom order", like CopyPanel.vue, don't care about the group tree itself).
+ *
+ *  Blocks that exist in `data.prompts` but aren't referenced anywhere in prompt_order (hidden
+ *  blocks — same concept as store.ts's `hiddenBlocks` computed) are appended at the end, each
+ *  flagged `hidden: true`, in their `prompts` array order.
+ *
+ *  Dangling order entries that reference a since-deleted prompt identifier are silently skipped
+ *  (mirrors what flatNodes effectively does — it can only ever resolve identifiers that exist in
+ *  `prompts`), and a duplicate order entry for the same identifier only surfaces once, at its
+ *  first position.
+ *
+ *  Was needed because CopyPanel.vue used to iterate `data.prompts` directly — prompts[] is
+ *  whatever order ST happened to store the blocks in on disk, which is NOT the order they
+ *  actually render in (that's prompt_order's job) — so the copy-panel block list was visibly out
+ *  of order relative to the main editor's Sidebar, and shift-range-select there picked the wrong
+ *  span of rows for the same reason. */
+export function orderedPromptsWithHidden(data: PresetData): OrderedBlockEntry[] {
+  const byId = new Map(data.prompts.map(p => [p.identifier, p]))
+  const seen = new Set<string>()
+  const out: OrderedBlockEntry[] = []
+  const rawOrder = (Array.isArray(data.prompt_order) && data.prompt_order.length && Array.isArray(data.prompt_order[0].order))
+    ? data.prompt_order[0].order
+    : []
+  for (const item of rawOrder) {
+    if (seen.has(item.identifier)) continue
+    const b = byId.get(item.identifier)
+    if (!b) continue
+    seen.add(item.identifier)
+    out.push({ block: b, hidden: false })
+  }
+  for (const b of data.prompts) {
+    if (!seen.has(b.identifier)) out.push({ block: b, hidden: true })
+  }
+  return out
 }
 
 export function debounce<T extends (...a: any[]) => void>(fn: T, ms: number): T {

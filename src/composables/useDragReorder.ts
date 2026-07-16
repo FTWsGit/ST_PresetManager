@@ -14,6 +14,14 @@ export function useDragReorder() {
     if (el) itemEls.set(i, el as HTMLElement)
     else itemEls.delete(i)
   }
+  /** Scrolls item `i` into view if it's currently mounted — used to react to external "show me
+   *  this item" signals (e.g. tabsStore.listScrollToken) the same way Sidebar.vue's own
+   *  scrollSelectedIntoView() does for the block list, shared here since useDragReorder already
+   *  owns the itemEls map. No-op if `i` isn't currently rendered (filtered out, or out of range). */
+  function scrollItemIntoView(i: number) {
+    const el = itemEls.get(i)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }
   function updateDragOver(clientY: number) {
     for (const [idx, el] of itemEls) {
       const r = el.getBoundingClientRect()
@@ -54,5 +62,5 @@ export function useDragReorder() {
     if (suppressClick) { suppressClick = false; return true }
     return false
   }
-  return { dragIdx, dragOverIdx, dragOverPos, setItemRef, onItemMouseDown, consumeSuppressClick }
+  return { dragIdx, dragOverIdx, dragOverPos, setItemRef, onItemMouseDown, consumeSuppressClick, scrollItemIntoView }
 }

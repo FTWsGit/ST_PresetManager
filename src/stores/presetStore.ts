@@ -1,17 +1,25 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch, nextTick } from 'vue'
-import type { PresetData, PresetBlock, OrderItem, OrderGroup, OrderNode, FlatNode, SearchResult, VarOp, PreviewBlockGroup, RegexScript } from './types'
-import * as ST from './sillytavern'
-import type { PresetListEntry } from './sillytavern'
-import { escRe, macroAwareDiff, applyMultiSelect } from './utils'
-import { useUiState } from './composables/useUiState'
+import type { PresetData, PresetBlock, OrderItem, OrderGroup, OrderNode, FlatNode, SearchResult, VarOp, PreviewBlockGroup, RegexScript } from '../types'
+import * as ST from '../sillytavern'
+import type { PresetListEntry } from '../sillytavern'
+import { escRe, macroAwareDiff, applyMultiSelect } from '../utils'
+import { useUiState } from '../composables/useUiState'
 import { useTabsStore } from './tabsStore'
 
 export function isGroup(node: OrderNode): node is OrderGroup {
   return 'children' in node && Array.isArray((node as any).children)
 }
 
-export const useStore = defineStore('main', () => {
+// Was useStore()/defineStore('main', ...). Renamed the export (not the Pinia store id — that
+// stays 'main', changing it would invalidate anyone's persisted devtools state for no benefit)
+// now that this sits alongside tabsStore/confirmStore in stores/ — "useStore" stopped being a
+// good name the moment a second domain (regex) joined this file, and would only get more
+// confusing once a worldbook/character store exists too (see PROJECT_HANDOFF.md TODO). Every
+// call site across the app was updated to usePresetStore() as part of this same reorg.
+export const usePresetStore = defineStore('main', () => {
+  const tabsStore = useTabsStore()
+
   /* ====== Core State ====== */
   const rawData = ref<PresetData | null>(null)
   const prompts = ref<PresetBlock[]>([])
@@ -131,14 +139,10 @@ export const useStore = defineStore('main', () => {
   // editor — used while typing in the search box so the editor previews the current match
   // without stealing the keystroke you're mid-typing.
   const editorJump = ref<{ line: number; col: number; len: number; token: number; keepFocus: boolean } | null>(null)
-  const sidebarJumpToken = ref(0)
   let jumpCounter = 0
   function requestEditorJump(line: number, col: number, len: number, keepFocus = false) {
     jumpCounter++
     editorJump.value = { line, col, len, token: jumpCounter, keepFocus }
-  }
-  function requestSidebarScroll() {
-    sidebarJumpToken.value++
   }
 
   /* ====== Computed ====== */
@@ -241,7 +245,7 @@ export const useStore = defineStore('main', () => {
     anchorGi.value = -1
     presetName.value = name
     rebuildVarIndex()
-    useTabsStore().closeAll() // 旧标签（block、regex都算）指向的都是即将被替换掉的这份数据
+    tabsStore.closeAll() // 旧标签（block、regex都算）指向的都是即将被替换掉的这份数据
     nextTick(() => { dirty.value = false })
   }
 
@@ -267,8 +271,17 @@ export const useStore = defineStore('main', () => {
     ST.invalidateCache()
     let name: string
     try { name = ST.getSelectedPresetName() }
-    catch (e: any) { showToast('Could not read selected preset: ' + (e?.message || e)); return }
+    catch (e: any) { showToast('Can\'t load selected preset in SillyTavern: ' + (e?.message || e)); return }
     if (!name) { showToast('No preset currently selected in SillyTavern'); return }
+    loadPresetByName(name)
+  }
+
+  function reloadPreset() {
+    refreshPresetList()
+    ST.invalidateCache()
+    let name: string
+    name = presetName.value
+    if (!name) { showToast('No preset currently selected in Preset Manager'); return }
     loadPresetByName(name)
   }
 
@@ -352,7 +365,7 @@ export const useStore = defineStore('main', () => {
     // selected" — a ctrl-click always focuses the row it clicked even when the click just
     // deselected it (so the editor doesn't jump away), matching the original per-branch behavior.
     selIdx.value = hasCtrl ? gi : (next.selected.has(gi) ? gi : -1)
-    requestSidebarScroll()
+    tabsStore.requestListScroll('block')
   }
   function addBlock() {
     if (!rawData.value) { showToast('Load a preset first'); return }
@@ -382,7 +395,7 @@ export const useStore = defineStore('main', () => {
     }
     selectedGi.value = new Set([selIdx.value])
     anchorGi.value = selIdx.value
-    requestSidebarScroll()
+    tabsStore.requestListScroll('block')
     showToast('Created')
   }
   function deleteBlock(gi: number) { confirmIdx.value = gi; confirmOpen.value = true }
@@ -436,7 +449,7 @@ export const useStore = defineStore('main', () => {
       selectedGi.value = new Set([selIdx.value])
       anchorGi.value = selIdx.value
     }
-    requestSidebarScroll()
+    tabsStore.requestListScroll('block')
     showToast('Added')
   }
   function toggleBlock(gi: number) {
@@ -554,7 +567,7 @@ export const useStore = defineStore('main', () => {
     const r = searchResults.value[i]
     const gi = flatNodes.value.findIndex(n => !n.isGroup && (n.ref as OrderItem).identifier === r.blockId)
     if (gi >= 0 && gi !== selIdx.value) selectBlock(gi)
-    else if (gi >= 0) requestSidebarScroll()
+    else if (gi >= 0) tabsStore.requestListScroll('block')
     requestEditorJump(r.line, r.col, r.ml, true)
   }
   function jumpToSearchResult(i: number) {
@@ -563,7 +576,7 @@ export const useStore = defineStore('main', () => {
     const r = searchResults.value[i]
     const gi = flatNodes.value.findIndex(n => !n.isGroup && (n.ref as OrderItem).identifier === r.blockId)
     if (gi >= 0 && gi !== selIdx.value) selectBlock(gi)
-    else if (gi >= 0) requestSidebarScroll()
+    else if (gi >= 0) tabsStore.requestListScroll('block')
     requestEditorJump(r.line, r.col, r.ml, false)
   }
   function navSearch(dir: number) {
@@ -647,7 +660,7 @@ export const useStore = defineStore('main', () => {
     const v = filteredVarOps.value[i]
     const gi = flatNodes.value.findIndex(n => !n.isGroup && (n.ref as OrderItem).identifier === v.blockId)
     if (gi >= 0 && gi !== selIdx.value) selectBlock(gi)
-    else if (gi >= 0) requestSidebarScroll()
+    else if (gi >= 0) tabsStore.requestListScroll('block')
     requestEditorJump(v.line, v.col, v.varName.length)
   }
   function navVar(dir: number) {
@@ -813,8 +826,8 @@ export const useStore = defineStore('main', () => {
     regexScripts, addRegexScript, deleteRegexScript, reorderRegexScript,
     settingsOpen, confirmOpen, confirmIdx, hiddenOpen, copyPanelOpen, dirty,
     currentBlock, hasData, hiddenBlocks,
-    editorJump, sidebarJumpToken, requestEditorJump, requestSidebarScroll,
-    loadFromContext, doSavePreset, refreshPresetList, switchPreset, createPreset, removeCurrentPreset,
+    editorJump, requestEditorJump,
+    loadFromContext, doSavePreset, refreshPresetList, switchPreset, createPreset, removeCurrentPreset, reloadPreset,
     selectBlock, addBlock, deleteBlock, confirmDelete, hideBlock, addHiddenBlock,
     toggleBlock, reorderBlock,
     bindSelected, unbindGroup, toggleGroupCollapse,

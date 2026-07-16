@@ -59,14 +59,14 @@
 </template>
 
 <script setup lang="ts">
-import { useStore } from '../store'
-import { esc, roleClass as roleClassOf } from '../utils'
-import { usePanelResize } from '../composables/usePanelResize'
-import { copyToHostClipboard } from '../composables/hostEnv'
+import { usePresetStore } from '../../stores/presetStore'
+import { esc, roleClass as roleClassOf } from '../../utils'
+import { usePanelResize } from '../../composables/usePanelResize'
+import { copyToHostClipboard } from '../../composables/hostEnv'
 import { watch } from 'vue'
-import type { PreviewSegment } from '../types'
+import type { PreviewSegment } from '../../types'
 
-const store = useStore()
+const store = usePresetStore()
 
 const resize = usePanelResize({
   getWidth: () => store.settings.previewWidth,

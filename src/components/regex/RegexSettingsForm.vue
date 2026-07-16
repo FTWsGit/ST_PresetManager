@@ -45,12 +45,12 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { useStore } from '../../store'
-import { useTabsStore } from '../../tabsStore'
+import { usePresetStore } from '../../stores/presetStore'
+import { useTabsStore } from '../../stores/tabsStore'
 import { REGEX_PLACEMENT_OPTIONS as PLACEMENT_OPTIONS, REGEX_SUBSTITUTE_OPTIONS as SUBSTITUTE_OPTIONS } from '../../types'
 import { parseFindRegex } from '../../regexEngine'
 
-const store = useStore()
+const store = usePresetStore()
 const tabsStore = useTabsStore()
 const advancedOpen = ref(false)
 
