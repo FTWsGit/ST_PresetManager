@@ -167,7 +167,11 @@ function measureSingleLineHeight(): number {
   const mirror = mirrorRef.value
   const prevText = mirror.textContent
   mirror.textContent = '\u00A0' // a single, non-wrapping character guarantees exactly one line
-  const h = mirror.offsetHeight || 20
+  // getBoundingClientRect() (not offsetHeight) — offsetHeight's IDL type is `long`, so it
+  // truncates/rounds any fractional line-height (e.g. --pm-fs:14.5px * --pm-lh:1.65 = 23.925px)
+  // to an integer right here at the source. See updateLineNums() for why that sub-pixel loss
+  // matters once these per-line heights get stacked.
+  const h = mirror.getBoundingClientRect().height || 20
   mirror.textContent = prevText
   cachedLH = h
   return h
@@ -209,7 +213,14 @@ function updateLineNums() {
       m.appendChild(d)
     }
     for (let k = 0; k < misses.length; k++) {
-      const h = Math.max(els[k].offsetHeight, lh)
+      // getBoundingClientRect() keeps the fractional part of the wrapped-line height
+      // (offsetHeight rounds to an integer per element — see measureSingleLineHeight()'s
+      // comment). Rounding each logical line independently before stacking them as CSS
+      // `height` is exactly what causes the gutter to drift further out of sync with the
+      // textarea the more lines/content there are: every line's own ~0.5px rounding error
+      // adds up instead of cancelling out, since the real textarea lays its text out as one
+      // continuous flow with no such per-line rounding.
+      const h = Math.max(els[k].getBoundingClientRect().height, lh)
       heights[misses[k].i] = h
       if (lineHeightCache.size < 5000) lineHeightCache.set(misses[k].key, h)
     }

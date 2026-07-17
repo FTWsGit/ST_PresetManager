@@ -45,6 +45,24 @@ export const usePresetStore = defineStore('main', () => {
     return nodes
   })
 
+  /** Resolves a block identifier to its flatNodes gi, auto-expanding its parent group first if
+   *  that group is currently collapsed. flatNodes deliberately excludes children of a collapsed
+   *  group (that's what actually drives the sidebar's collapse/expand rendering — see the `walk`
+   *  above), but search results / var-nav entries / var-popup entries can point at a block
+   *  anywhere in the preset, regardless of what's currently visible in the sidebar. Without this,
+   *  flatNodes.findIndex(...) silently returns -1 for anything inside a collapsed group and the
+   *  jump becomes a no-op (wrong block stays selected, or nothing happens at all).
+   */
+  function revealAndFindGi(identifier: string): number {
+    for (const node of order.value) {
+      if (isGroup(node) && node.collapsed && node.children.some(c => c.identifier === identifier)) {
+        node.collapsed = false
+        break // an item can only belong to one top-level group
+      }
+    }
+    return flatNodes.value.findIndex(n => !n.isGroup && (n.ref as OrderItem).identifier === identifier)
+  }
+
   /* ====== UI State ====== */
   const panelOpen = ref(false)
   // Settings (font/colors/panel widths) + toast notifications — extracted to useUiState() since
@@ -567,7 +585,7 @@ export const usePresetStore = defineStore('main', () => {
     if (i < 0 || i >= searchResults.value.length) return
     searchIdx.value = i
     const r = searchResults.value[i]
-    const gi = flatNodes.value.findIndex(n => !n.isGroup && (n.ref as OrderItem).identifier === r.blockId)
+    const gi = revealAndFindGi(r.blockId)
     if (gi >= 0 && gi !== selIdx.value) selectBlock(gi)
     else if (gi >= 0) tabsStore.requestListScroll('block')
     requestEditorJump(r.line, r.col, r.ml, true)
@@ -576,7 +594,7 @@ export const usePresetStore = defineStore('main', () => {
     if (i < 0 || i >= searchResults.value.length) return
     searchIdx.value = i
     const r = searchResults.value[i]
-    const gi = flatNodes.value.findIndex(n => !n.isGroup && (n.ref as OrderItem).identifier === r.blockId)
+    const gi = revealAndFindGi(r.blockId)
     if (gi >= 0 && gi !== selIdx.value) selectBlock(gi)
     else if (gi >= 0) tabsStore.requestListScroll('block')
     requestEditorJump(r.line, r.col, r.ml, false)
@@ -662,7 +680,7 @@ export const usePresetStore = defineStore('main', () => {
     if (i < 0 || i >= filteredVarOps.value.length) return
     varIdx.value = i
     const v = filteredVarOps.value[i]
-    const gi = flatNodes.value.findIndex(n => !n.isGroup && (n.ref as OrderItem).identifier === v.blockId)
+    const gi = revealAndFindGi(v.blockId)
     if (gi >= 0 && gi !== selIdx.value) selectBlock(gi)
     else if (gi >= 0) tabsStore.requestListScroll('block')
     requestEditorJump(v.line, v.col, v.varName.length)
@@ -682,12 +700,20 @@ export const usePresetStore = defineStore('main', () => {
   const varPopupIdx = ref(-1)
   const varPopupPos = ref({ top: 0, left: 0 })
 
-  function showVarPopup(varName: string, clickOrdIdx: number, clickPos: number, pos: { top: number; left: number }) {
+  function showVarPopup(varName: string, clickGi: number, clickPos: number, pos: { top: number; left: number }) {
     const ops: VarOp[] = []
     let currentIdx = -1
     const re = new RegExp('\\{\\{(setvar|addvar)::' + escRe(varName) + '::([\\s\\S]*?)\\}\\}|\\{\\{getvar::' + escRe(varName) + '\\}\\}', 'g')
-    order.value.forEach((o, oi) => {
-      if (isGroup(o)) return // var-popup currently scans top-level order only (grouped blocks are skipped)
+    // The click always originates from the block currently open in the editor (that's the only
+    // place enableVarClick is wired up), so resolve its identifier once up front and match by
+    // identifier below — not by re-deriving an index. Groups: scan order.value.flatMap (like
+    // generatePreviewBlocks) rather than flatNodes, since flatNodes deliberately drops the
+    // children of a COLLAPSED group (that's what drives the sidebar's collapse/expand
+    // rendering) — a collapsed group must not make its blocks' variables invisible to this popup.
+    const clickNode = flatNodes.value[clickGi]
+    const clickBlockId = clickNode && !clickNode.isGroup ? (clickNode.ref as OrderItem).identifier : null
+    const allItems = order.value.flatMap(node => isGroup(node) ? node.children : [node])
+    allItems.forEach((o) => {
       const p = prompts.value.find(pp => pp.identifier === o.identifier)
       if (!p) return
       const c = p.content || ''
@@ -702,9 +728,9 @@ export const usePresetStore = defineStore('main', () => {
         ops.push({
           blockId: p.identifier, blockName: p.name || p.identifier,
           type, varName, varValue: m[2] || '',
-          line, col: varStart - lastNl - 1, pos: m.index, ordIdx: oi,
+          line, col: varStart - lastNl - 1, pos: m.index, ordIdx: 0, // not a real index anymore (see comment above) — unused elsewhere, kept for shape compat with VarOp
         })
-        if (oi === clickOrdIdx && m.index <= clickPos && clickPos <= m.index + m[0].length) currentIdx = ops.length - 1
+        if (p.identifier === clickBlockId && m.index <= clickPos && clickPos <= m.index + m[0].length) currentIdx = ops.length - 1
       }
     })
     varPopupVarName.value = varName
@@ -722,8 +748,9 @@ export const usePresetStore = defineStore('main', () => {
     if (i < 0 || i >= varPopupOps.value.length) return
     varPopupIdx.value = i
     const v = varPopupOps.value[i]
-    const oIdx = order.value.findIndex(o => !isGroup(o) && o.identifier === v.blockId)
-    if (oIdx >= 0 && oIdx !== selIdx.value) selectBlock(oIdx)
+    const gi = revealAndFindGi(v.blockId)
+    if (gi >= 0 && gi !== selIdx.value) selectBlock(gi)
+    else if (gi >= 0) tabsStore.requestListScroll('block')
     requestEditorJump(v.line, v.col, v.varName.length)
   }
   function navPopupVar(dir: number) {
