@@ -1,9 +1,9 @@
 <template>
   <div v-if="store.currentBlock" class="pm-rx-form">
-    <label class="pm-rx-label" style="margin-top:0">名称</label>
-    <input class="pm-rx-input" type="text" :value="store.currentBlock.name" @input="onNameInput" placeholder="给这个块起个名字" />
+    <label class="pm-rx-label" style="margin-top:0">{{ store.t('block.settings.name') }}</label>
+    <input class="pm-rx-input" type="text" :value="store.currentBlock.name" @input="onNameInput" :placeholder="store.t('block.settings.namePlaceholder')" />
 
-    <label class="pm-rx-label">角色</label>
+    <label class="pm-rx-label">{{ store.t('block.settings.role') }}</label>
     <select class="pm-rx-input" :value="store.currentBlock.role" @change="onRoleChange">
       <option value="system">system</option>
       <option value="user">user</option>
@@ -11,10 +11,10 @@
     </select>
 
     <p v-if="store.currentBlock.marker" class="pm-muted" style="font-size:12px;margin-top:10px">
-      这是一个 marker 块（{{ store.currentBlock.identifier }}），内容由 SillyTavern 内部生成，这里的角色/名称改动可能不影响实际渲染。
+      {{ store.t('block.settings.markerHint', { id: store.currentBlock.identifier }) }}
     </p>
   </div>
-  <p v-else class="pm-empty-note">Select a block to edit its settings</p>
+  <p v-else class="pm-empty-note">{{ store.t('block.settings.empty') }}</p>
 </template>
 
 <script setup lang="ts">

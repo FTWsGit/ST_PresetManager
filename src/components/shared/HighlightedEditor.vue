@@ -43,8 +43,8 @@
   </div>
   <div v-if="showStatusbar" class="pm-statusbar">
     <span>{{ cursorText }}</span>
-    <span>{{ content.length }} chars</span>
-    <span>{{ lineCount }} lines</span>
+    <span>{{ charsLabel }}</span>
+    <span>{{ linesLabel }}</span>
   </div>
 </template>
 
@@ -68,12 +68,21 @@ const props = withDefaults(defineProps<{
   enableVarClick?: boolean
   showStatusbar?: boolean
   placeholder?: string
+  /** i18n: cursor position label, e.g. "Ln 3, Col 12". Receives {line} and {col} params. */
+  statusCursorLabel?: string
+  /** i18n: character count label, e.g. "{count} chars". Receives {count} param. */
+  statusCharsLabel?: string
+  /** i18n: line count label, e.g. "{count} lines". Receives {count} param. */
+  statusLinesLabel?: string
 }>(), {
   jump: null,
   lineClass: () => '',
   enableVarClick: false,
   showStatusbar: true,
   placeholder: '',
+  statusCursorLabel: 'Ln {line}, Col {col}',
+  statusCharsLabel: '{count} chars',
+  statusLinesLabel: '{count} lines',
 })
 
 const emit = defineEmits<{
@@ -103,8 +112,11 @@ const RESIZE_DEBOUNCE_MS = 100
 const content = ref(props.modelValue)
 const cursorLine = ref(1)
 const cursorCol = ref(1)
-const cursorText = computed(() => `Ln ${cursorLine.value}, Col ${cursorCol.value}`)
+const cursorText = computed(() =>
+  props.statusCursorLabel.replace(/\{line\}/g, String(cursorLine.value)).replace(/\{col\}/g, String(cursorCol.value)))
 const lineCount = computed(() => 1 + (content.value.match(/\n/g) || []).length)
+const charsLabel = computed(() => props.statusCharsLabel.replace(/\{count\}/g, String(content.value.length)))
+const linesLabel = computed(() => props.statusLinesLabel.replace(/\{count\}/g, String(lineCount.value)))
 
 const lineHeights = ref<number[]>([])
 

@@ -2,19 +2,19 @@
   <div class="pm-right-panel" :class="{ float: store.settings.varPanelFloat }" :style="{ width: store.settings.varPanelWidth + 'px' }">
     <div class="pm-right-resize-handle" :class="{ active: resize.active.value }" @mousedown="resize.onMouseDown"></div>
     <div class="pm-rp-header">
-      <span>📊 Variables</span>
+      <span>{{ store.t('block.varPanel.title') }}</span>
       <div class="pm-row-tight">
-        <button class="pm-btn icon-btn" :class="{ active: store.settings.varPanelFloat }" title="Toggle float mode" @click="toggleFloat">📌</button>
+        <button class="pm-btn icon-btn" :class="{ active: store.settings.varPanelFloat }" :title="store.t('block.varPanel.toggleFloat')" @click="toggleFloat">📌</button>
         <button class="pm-btn close-btn compact" @click="store.varNavOpen = false">✕</button>
       </div>
     </div>
     <div class="pm-rp-tools">
-      <input type="text" v-model="store.varFilterQ" placeholder="Filter..." />
+      <input type="text" v-model="store.varFilterQ" :placeholder="store.t('block.varPanel.filter')" />
       <button class="pm-btn sm" @click="store.rebuildVarIndex()">🔄</button>
     </div>
     <div class="pm-rp-nav">
-      <button class="pm-btn" @click="store.navVar(-1)">◀ Prev</button>
-      <button class="pm-btn" @click="store.navVar(1)">Next ▶</button>
+      <button class="pm-btn" @click="store.navVar(-1)">{{ store.t('block.varPanel.prev') }}</button>
+      <button class="pm-btn" @click="store.navVar(1)">{{ store.t('block.varPanel.next') }}</button>
       <span class="pm-search-count">{{ store.filteredVarOps.length }}/{{ store.allVarOps.length }}</span>
     </div>
     <div class="pm-rp-list">

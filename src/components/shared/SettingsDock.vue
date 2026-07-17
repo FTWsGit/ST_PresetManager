@@ -2,9 +2,9 @@
   <div v-if="formComponent && tabsStore.settingsDockOpen" class="pm-right-panel pm-settings-dock" :class="{ float: store.settings.settingsDockFloat }" :style="{ width: store.settings.settingsDockWidth + 'px' }">
     <div class="pm-right-resize-handle" :class="{ active: resize.active.value }" @mousedown="resize.onMouseDown"></div>
     <div class="pm-rp-header">
-      <span>⚙ 设置</span>
+      <span>{{ store.t('shared.settingsDock.title') }}</span>
       <div class="pm-row-tight">
-        <button class="pm-btn icon-btn" :class="{ active: store.settings.settingsDockFloat }" title="Toggle float mode" @click="toggleFloat">📌</button>
+        <button class="pm-btn icon-btn" :class="{ active: store.settings.settingsDockFloat }" :title="store.t('shared.settingsDock.toggleFloat')" @click="toggleFloat">📌</button>
         <button class="pm-btn close-btn compact" @click="tabsStore.settingsDockOpen = false">✕</button>
       </div>
     </div>

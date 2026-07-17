@@ -7,25 +7,25 @@
     <Transition name="pm-panel">
       <div v-if="store.panelOpen" class="pm-panel">
         <div class="pm-header">
-          <button class="pm-btn accent" @click="store.doSavePreset()">💾 Save{{ store.dirty ? ' *' : '' }}</button>
+          <button class="pm-btn accent" @click="store.doSavePreset()">{{ store.t('shared.header.save', { star: store.dirty ? ' *' : '' }) }}</button>
           <div class="pm-sep"></div>
-          <button class="pm-btn" @click="store.reloadPreset()">🗘 Reload</button>
-          <button class="pm-btn" @click="store.copyPanelOpen = true">⇆ Copy Blocks</button>
+          <button class="pm-btn" @click="store.reloadPreset()">{{ store.t('shared.header.reload') }}</button>
+          <button class="pm-btn" @click="store.copyPanelOpen = true">{{ store.t('shared.header.copyBlocks') }}</button>
           <div class="pm-sep"></div>
           <div class="pm-mode-switch">
-            <button class="pm-btn sm" :class="{ active: tabsStore.sidebarMode === 'block' }" @click="tabsStore.setSidebarMode('block')">预设</button>
-            <button class="pm-btn sm" :class="{ active: tabsStore.sidebarMode === 'regex' }" @click="tabsStore.setSidebarMode('regex')">正则</button>
+            <button class="pm-btn sm" :class="{ active: tabsStore.sidebarMode === 'block' }" @click="tabsStore.setSidebarMode('block')">{{ store.t('shared.header.mode.block') }}</button>
+            <button class="pm-btn sm" :class="{ active: tabsStore.sidebarMode === 'regex' }" @click="tabsStore.setSidebarMode('regex')">{{ store.t('shared.header.mode.regex') }}</button>
           </div>
           <div class="pm-sep"></div>
-          <button class="pm-btn" :class="{ active: store.searchOpen }" @click="toggleSearch">🔍 Search</button>
-          <button class="pm-btn" @click="store.settingsOpen = true">⚙ Settings</button>
+          <button class="pm-btn" :class="{ active: store.searchOpen }" @click="toggleSearch">{{ store.t('shared.header.search') }}</button>
+          <button class="pm-btn" @click="store.settingsOpen = true">{{ store.t('shared.header.settings') }}</button>
           <div class="pm-spacer"></div>
-          <button class="pm-btn" :class="{ active: store.varNavOpen }" @click="store.varNavOpen = !store.varNavOpen">📊 Var Nav</button>
-          <button class="pm-btn" :class="{ active: store.previewOpen }" @click="store.previewOpen = !store.previewOpen">👁 Preview</button>
-          <button class="pm-btn icon-btn" title="New preset" @click="onNewPreset">+</button>
-          <button class="pm-btn icon-btn" title="Delete preset" @click="onDeletePreset" :disabled="!store.presetName">🗑</button>
-          <select v-if="store.presetList.length" class="pm-preset-select" :value="store.presetName" @change="onPresetSelect($event)" title="Switch preset">
-            <option v-if="!store.presetList.some(p => p.name === store.presetName)" :value="store.presetName" disabled>{{ store.presetName || '(none loaded)' }}</option>
+          <button class="pm-btn" :class="{ active: store.varNavOpen }" @click="store.varNavOpen = !store.varNavOpen">{{ store.t('shared.header.varNav') }}</button>
+          <button class="pm-btn" :class="{ active: store.previewOpen }" @click="store.previewOpen = !store.previewOpen">{{ store.t('shared.header.preview') }}</button>
+          <button class="pm-btn icon-btn" :title="store.t('shared.header.newPreset')" @click="onNewPreset">+</button>
+          <button class="pm-btn icon-btn" :title="store.t('shared.header.deletePreset')" @click="onDeletePreset" :disabled="!store.presetName">🗑</button>
+          <select v-if="store.presetList.length" class="pm-preset-select" :value="store.presetName" @change="onPresetSelect($event)" :title="store.t('shared.header.switchPreset')">
+            <option v-if="!store.presetList.some(p => p.name === store.presetName)" :value="store.presetName" disabled>{{ store.presetName || store.t('shared.header.noneLoaded') }}</option>
             <option v-for="p in store.presetList" :key="p.name" :value="p.name">{{ p.name }}</option>
           </select>
           <span v-else-if="store.presetName" class="pm-preset-name">{{ store.presetName }}</span>
@@ -98,9 +98,10 @@ function onPresetSelect(e: Event) {
   const name = select.value
   if (!name || name === store.presetName) return
   confirmStore.ask({
-    title: 'Switch preset?',
-    message: `Switch to preset <strong>${esc(name)}</strong>? Any unsaved edits to the current preset will be lost.`,
-    confirmText: 'Switch',
+    title: store.t('shared.confirm.switchPreset.title'),
+    message: store.t('shared.confirm.switchPreset.message', { name: esc(name) }),
+    confirmText: store.t('shared.confirm.switchPreset.confirm'),
+    cancelText: store.t('common.cancel'),
     danger: false,
     onConfirm: () => store.switchPreset(name),
     // The <select> isn't v-model two-way bound, so the browser already visually switched to
@@ -112,11 +113,12 @@ function onPresetSelect(e: Event) {
 
 function onNewPreset() {
   confirmStore.askInput({
-    title: '新预设名称',
-    placeholder: '预设名称',
-    confirmText: '创建',
+    title: store.t('shared.prompt.newPreset.title'),
+    placeholder: store.t('shared.prompt.newPreset.placeholder'),
+    confirmText: store.t('shared.prompt.newPreset.confirm'), 
+    cancelText: store.t('shared.prompt.newPreset.cancel'),
     onConfirm: (name) => {
-      if (store.presetList.some(p => p.name === name)) { store.showToast('已存在同名预设'); return }
+      if (store.presetList.some(p => p.name === name)) { store.showToast(store.t('shared.toast.duplicatePresetName')); return }
       store.createPreset(name)
     },
   })
@@ -124,8 +126,10 @@ function onNewPreset() {
 function onDeletePreset() {
   if (!store.presetName) return
   confirmStore.ask({
-    title: 'Delete preset?',
-    message: `This will permanently remove <strong>${esc(store.presetName)}</strong>. This cannot be undone.`,
+    title: store.t('shared.confirm.deletePreset.title'),
+    message: store.t('shared.confirm.deletePreset.message', { name: esc(store.presetName) }),
+    confirmText: store.t('common.delete'),
+    cancelText: store.t('common.cancel'),
     onConfirm: () => store.removeCurrentPreset(),
   })
 }

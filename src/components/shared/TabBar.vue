@@ -7,12 +7,14 @@
          :title="t.label">
       <span class="pm-tab-domain-dot" :class="'domain-' + t.domain"></span>
       <span class="pm-tab-label">{{ t.label }}</span>
-      <span class="pm-tab-close" title="关闭" @click.stop="tabs.close(t.domain, t.key)">×</span>
+      <span class="pm-tab-close" :title="store.t('shared.tabBar.close')" @click.stop="tabs.close(t.domain, t.key)">×</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useTabsStore } from '../../stores/tabsStore'
+import { usePresetStore } from '../../stores/presetStore'
 const tabs = useTabsStore()
+const store = usePresetStore()
 </script>

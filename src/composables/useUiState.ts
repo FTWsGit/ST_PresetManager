@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import type { Settings } from '../types'
 import { DEFAULT_SETTINGS, FONT_OPTIONS } from '../types'
+import { useI18n } from './useI18n'
 
 /**
  * Editor settings (font/colors/panel widths) + the toast notification, both currently only used
@@ -42,10 +43,16 @@ export function useUiState() {
     return JSON.parse(JSON.stringify(DEFAULT_SETTINGS))
   }
   function saveSettings() { localStorage.setItem('st-pm-settings', JSON.stringify(settings.value)) }
+
+  // useI18n reads off the same `settings` ref this composable owns — language is just another
+  // Settings field, persisted through the loadSettings/saveSettings path above, not a second
+  // store.
+  const { t, currentLocale } = useI18n(settings)
+
   function resetSettings() {
     settings.value = JSON.parse(JSON.stringify(DEFAULT_SETTINGS))
     saveSettings()
-    showToast('Settings reset')
+    showToast(t('shared.toast.settingsReset'))
   }
 
   const toastMsg = ref('')
@@ -58,5 +65,5 @@ export function useUiState() {
     toastTimer = setTimeout(() => { toastVisible.value = false }, ms)
   }
 
-  return { settings, cssVars, loadSettings, saveSettings, resetSettings, toastMsg, toastVisible, showToast }
+  return { settings, cssVars, loadSettings, saveSettings, resetSettings, toastMsg, toastVisible, showToast, t, currentLocale }
 }

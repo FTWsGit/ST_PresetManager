@@ -2,9 +2,9 @@
   <div class="pm-editor-panel" v-if="!tabsStore.activeTab">
     <div class="pm-editor-empty">
       <div class="icon">📝</div>
-      <p v-if="tabsStore.sidebarMode === 'regex'">选一条正则，或者新建一条</p>
-      <p v-else-if="store.hasData">Select a block to edit</p>
-      <p v-else>Loading preset from context...</p>
+      <p v-if="tabsStore.sidebarMode === 'regex'">{{ store.t('shared.editorShell.emptyRegex') }}</p>
+      <p v-else-if="store.hasData">{{ store.t('shared.editorShell.emptyBlock') }}</p>
+      <p v-else>{{ store.t('shared.editorShell.loading') }}</p>
     </div>
   </div>
   <BlockContentEditor v-else-if="tabsStore.activeTab.domain === 'block'" />

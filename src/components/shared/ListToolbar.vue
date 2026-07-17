@@ -6,9 +6,11 @@
   <div class="pm-cp-toolbar">
     <slot />
     <span class="pm-spacer"></span>
-    <span class="pm-muted">{{ count }} 条</span>
+    <span class="pm-muted">{{ store.t('shared.listToolbar.count', { count }) }}</span>
   </div>
 </template>
 <script setup lang="ts">
+import { usePresetStore } from '../../stores/presetStore'
 defineProps<{ count: number }>()
+const store = usePresetStore()
 </script>

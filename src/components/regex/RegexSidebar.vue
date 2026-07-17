@@ -1,13 +1,13 @@
 <template>
   <aside class="pm-sidebar" :style="{ width: store.settings.sidebarWidth + 'px' }">
     <div class="pm-sidebar-header">
-      <span>正则脚本 ({{ store.regexScripts.length }})</span>
+      <span>{{ store.t('regex.sidebar.title', { count: store.regexScripts.length }) }}</span>
       <ListToolbar :count="store.regexScripts.length">
-        <button class="pm-btn" @click="onAdd">+ 新建</button>
+        <button class="pm-btn" @click="onAdd">{{ store.t('regex.sidebar.newScript') }}</button>
       </ListToolbar>
     </div>
     <div class="pm-block-list">
-      <p v-if="!store.regexScripts.length" class="pm-cp-empty">还没有绑定的正则</p>
+      <p v-if="!store.regexScripts.length" class="pm-cp-empty">{{ store.t('regex.sidebar.empty') }}</p>
       <div v-for="(r, i) in store.regexScripts" :key="r.id"
            :ref="(el) => setItemRef(el, i)"
            class="pm-block-item"
@@ -17,10 +17,10 @@
            @mousedown="onDragStart(i, $event)"
            @click="onItemClick(i)">
         <span class="pm-drag-handle">⠿</span>
-        <span class="pm-toggle-sw" :class="{ on: !r.disabled }" title="启用/禁用" @click.stop="r.disabled = !r.disabled"></span>
-        <span class="pm-block-name">{{ r.scriptName || '(未命名)' }}</span>
+        <span class="pm-toggle-sw" :class="{ on: !r.disabled }" :title="store.t('regex.sidebar.toggleTitle')" @click.stop="r.disabled = !r.disabled"></span>
+        <span class="pm-block-name">{{ r.scriptName || store.t('common.unnamed') }}</span>
         <span class="pm-block-actions">
-          <span class="pm-block-act del" title="删除" @click.stop="onDelete(r)">🗑</span>
+          <span class="pm-block-act del" :title="store.t('regex.sidebar.deleteTitle')" @click.stop="onDelete(r)">🗑</span>
         </span>
       </div>
     </div>
@@ -48,13 +48,15 @@ function onAdd() {
   const id = store.addRegexScript()
   if (!id) return
   const s = store.regexScripts.find(r => r.id === id)
-  tabsStore.open({ domain: 'regex', key: id, label: s?.scriptName || '(未命名)' })
+  tabsStore.open({ domain: 'regex', key: id, label: s?.scriptName || store.t('common.unnamed') })
 }
 
 function onDelete(r: RegexScript) {
   confirmStore.ask({
-    title: 'Delete regex script?',
-    message: `This will permanently remove <strong>${esc(r.scriptName || r.id)}</strong> from the preset.`,
+    title: store.t('shared.confirm.deleteRegex.title'),
+    message: store.t('shared.confirm.deleteRegex.message', { name: esc(r.scriptName || r.id) }),
+    confirmText: store.t('common.delete'),
+    cancelText: store.t('common.cancel'),
     onConfirm: () => { store.deleteRegexScript(r.id); tabsStore.close('regex', r.id) },
   })
 }
@@ -62,7 +64,7 @@ function onDelete(r: RegexScript) {
 function onItemClick(i: number) {
   if (consumeSuppressClick()) return
   const r = store.regexScripts[i]
-  if (r) tabsStore.open({ domain: 'regex', key: r.id, label: r.scriptName || '(未命名)' })
+  if (r) tabsStore.open({ domain: 'regex', key: r.id, label: r.scriptName || store.t('common.unnamed') })
 }
 function onDragStart(i: number, e: MouseEvent) {
   onItemMouseDown(i, e, (from, to, after) => store.reorderRegexScript(from, to, after))

@@ -2,10 +2,18 @@
   <!-- Settings -->
   <div v-if="store.settingsOpen" class="pm-modal-overlay" @click.self="store.settingsOpen = false">
     <div class="pm-modal lg">
-      <h3>⚙ Editor Settings</h3>
+      <h3>⚙ {{ store.t('shared.settings.title') }}</h3>
       <div class="pm-modal-scroll">
         <div class="pm-settings-section">
-          <label>Font Size</label>
+          <label>{{ store.t('shared.settings.language') }}</label>
+          <select class="pm-select-wide" :value="store.settings.language"
+                  @change="store.settings.language = ($event.target as HTMLSelectElement).value as 'zh-CN' | 'en'; store.saveSettings()">
+            <option value="zh-CN">中文</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+        <div class="pm-settings-section">
+          <label>{{ store.t('shared.settings.fontSize') }}</label>
           <div class="pm-row">
             <input type="range" min="11" max="22" step="0.5" class="pm-range-wide"
                    v-model.number="draftFontSize"
@@ -14,50 +22,32 @@
           </div>
         </div>
         <div class="pm-settings-section">
-          <label>Font Family</label>
+          <label>{{ store.t('shared.settings.fontFamily') }}</label>
           <select class="pm-select-wide" :value="store.settings.editorFontFamily"
                   @change="store.settings.editorFontFamily = ($event.target as HTMLSelectElement).value; store.saveSettings()">
             <option v-for="f in FONT_OPTIONS" :key="f.name" :value="f.name">{{ f.name }}</option>
           </select>
         </div>
         <div class="pm-settings-section">
-          <label>Syntax Highlight Colors</label>
-          <div v-for="(label, key) in SYNTAX_LABELS" :key="key" class="pm-color-row">
+          <label>{{ store.t('shared.settings.syntaxColors') }}</label>
+          <div v-for="(labelKey, key) in SYNTAX_LABEL_KEYS" :key="key" class="pm-color-row">
             <input type="color" v-model="draftColors[key as keyof SyntaxColors]" @change="commitColor(key as keyof SyntaxColors)" />
-            <span class="cl-label">{{ label }}</span>
+            <span class="cl-label">{{ store.t(labelKey) }}</span>
             <span class="cl-hex">{{ draftColors[key as keyof SyntaxColors] }}</span>
           </div>
         </div>
       </div>
       <div class="pm-modal-footer">
-        <button class="pm-btn" @click="store.resetSettings()">Reset Defaults</button>
-        <button class="pm-btn accent" @click="store.settingsOpen = false">Close</button>
+        <button class="pm-btn" @click="store.resetSettings()">{{ store.t('shared.settings.resetDefaults') }}</button>
+        <button class="pm-btn accent" @click="store.settingsOpen = false">{{ store.t('common.close') }}</button>
       </div>
     </div>
   </div>
 
-  <!-- Confirm Delete (block 域老机制，见 PROJECT_HANDOFF.md 已知过渡状态——尚未并入 confirmStore，
-       因为它绑定了 store.confirmIdx 这个 flatNodes 下标，跟 confirmStore 通用的 onConfirm 闭包
-       模式语义上是一回事，只是没有迁移过去，保留原样不动风险最低。这也是这个文件（以及这次
-       reorg）里唯一还带着 block 专属内容的部分——其余都是真正 domain-agnostic 的通用弹窗
-       host，这就是它留在 shared/ 而不是 block/ 的原因。) -->
-  <div v-if="store.confirmOpen" class="pm-modal-overlay" @click.self="store.confirmOpen = false">
-    <div class="pm-modal sm">
-      <h3>Delete prompt block?</h3>
-      <p class="pm-confirm-text">This will permanently remove
-        <strong>{{ store.prompts.find(p => p.identifier === (store.order[store.confirmIdx] as any)?.identifier)?.name || 'this block' }}</strong>
-        from the preset.</p>
-      <div class="pm-modal-footer">
-        <button class="pm-btn" @click="store.confirmOpen = false">Cancel</button>
-        <button class="pm-btn accent pm-confirm-danger" @click="store.confirmDelete()">Delete</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Generic Confirm (confirmStore) — every "are you sure" in the app other than block-delete
-       goes through this one dialog: preset switch/delete, regex delete, CopyPanel reload/remove/
-       close-unsaved. NEVER use getHostWindow().confirm() — it's unreliable inside TauriTavern's
-       WebView2 host, see confirmStore.ts's doc comment. -->
+  <!-- Generic Confirm (confirmStore) — every "are you sure" in the app goes through this one dialog:
+       preset switch/delete, block delete, regex delete, CopyPanel reload/remove/close-unsaved.
+       NEVER use getHostWindow().confirm() — it's unreliable inside TauriTavern's WebView2 host,
+       see confirmStore.ts's doc comment. -->
   <div v-if="confirmStore.open" class="pm-modal-overlay" @click.self="confirmStore.cancel()">
     <div class="pm-modal sm">
       <h3>{{ confirmStore.title }}</h3>
@@ -89,9 +79,9 @@
   <!-- Add Hidden -->
   <div v-if="store.hiddenOpen" class="pm-modal-overlay" @click.self="store.hiddenOpen = false">
     <div class="pm-modal">
-      <h3>Add Hidden Block</h3>
+      <h3>{{ store.t('block.sidebar.hiddenBlock') }}</h3>
       <div class="pm-modal-list">
-        <div v-if="!store.hiddenBlocks.length" class="pm-empty-note">No hidden blocks</div>
+        <div v-if="!store.hiddenBlocks.length" class="pm-empty-note">{{ store.t('block.copyPanel.noBlocks') }}</div>
         <div v-for="p in store.hiddenBlocks" :key="p.identifier" class="pm-modal-item"
              @click="store.addHiddenBlock(p.identifier); store.hiddenOpen = false">
           <span class="pm-block-role" :class="roleClass(p.role)">{{ p.role }}</span>
@@ -99,7 +89,7 @@
         </div>
       </div>
       <div class="pm-modal-footer">
-        <button class="pm-btn" @click="store.hiddenOpen = false">Cancel</button>
+        <button class="pm-btn" @click="store.hiddenOpen = false">{{ store.t('common.close') }}</button>
       </div>
     </div>
   </div>
@@ -111,7 +101,7 @@
 <script setup lang="ts">
 import { ref, reactive, watch, nextTick } from 'vue'
 import { usePresetStore } from '../../stores/presetStore'
-import { FONT_OPTIONS, SYNTAX_LABELS } from '../../types'
+import { FONT_OPTIONS, SYNTAX_LABEL_KEYS } from '../../types'
 import type { SyntaxColors } from '../../types'
 import { roleClass } from '../../utils'
 import { useConfirmStore } from '../../stores/confirmStore'

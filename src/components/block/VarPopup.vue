@@ -3,7 +3,7 @@
     <div class="vp-header">
       <span class="vp-icon">📌</span>
       <span class="vp-varname">{{ store.varPopupVarName }}</span>
-      <span class="vp-count">{{ store.varPopupOps.length }} hit{{ store.varPopupOps.length !== 1 ? 's' : '' }}</span>
+      <span class="vp-count">{{ store.t(store.varPopupOps.length !== 1 ? 'block.varPopup.hit' : 'block.varPopup.hitSingle', { count: store.varPopupOps.length }) }}</span>
       <span class="vp-spacer"></span>
       <button class="vp-btn" @click="store.navPopupVar(-1)">◀</button>
       <button class="vp-btn" @click="store.navPopupVar(1)">▶</button>

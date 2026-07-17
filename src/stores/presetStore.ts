@@ -6,6 +6,7 @@ import type { PresetListEntry } from '../sillytavern'
 import { escRe, macroAwareDiff, applyMultiSelect } from '../utils'
 import { useUiState } from '../composables/useUiState'
 import { useTabsStore } from './tabsStore'
+import { useConfirmStore } from './confirmStore'
 
 export function isGroup(node: OrderNode): node is OrderGroup {
   return 'children' in node && Array.isArray((node as any).children)
@@ -19,6 +20,7 @@ export function isGroup(node: OrderNode): node is OrderGroup {
 // call site across the app was updated to usePresetStore() as part of this same reorg.
 export const usePresetStore = defineStore('main', () => {
   const tabsStore = useTabsStore()
+  const confirmStore = useConfirmStore()
 
   /* ====== Core State ====== */
   const rawData = ref<PresetData | null>(null)
@@ -68,7 +70,7 @@ export const usePresetStore = defineStore('main', () => {
   // Settings (font/colors/panel widths) + toast notifications — extracted to useUiState() since
   // neither is actually preset-specific; see that file's doc comment for why this is a
   // composable rather than a second live Pinia store today.
-  const { settings, cssVars, saveSettings, resetSettings, toastMsg, toastVisible, showToast } = useUiState()
+  const { settings, cssVars, saveSettings, resetSettings, toastMsg, toastVisible, showToast, t, currentLocale } = useUiState()
 
   /* ====== Bound Regex Scripts ====== */
   const regexScripts = computed<RegexScript[]>(() => {
@@ -79,7 +81,7 @@ export const usePresetStore = defineStore('main', () => {
   })
 
   function addRegexScript(): string | null {
-    if (!rawData.value) { showToast('Load a preset first'); return null }
+    if (!rawData.value) { showToast(t('shared.toast.loadPresetFirst')); return null }
     const script: RegexScript = {
       id: 'regex_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
       scriptName: 'New Regex', findRegex: '', replaceString: '', trimStrings: [],
@@ -146,8 +148,6 @@ export const usePresetStore = defineStore('main', () => {
 
   /* ====== Modals ====== */
   const settingsOpen = ref(false)
-  const confirmOpen = ref(false)
-  const confirmIdx = ref(-1)
   const hiddenOpen = ref(false)
   const copyPanelOpen = ref(false) // Cross-preset block copy tool (CopyPanel.vue) — fully self-contained there, this is just the open flag
 
@@ -271,17 +271,17 @@ export const usePresetStore = defineStore('main', () => {
 
   function refreshPresetList() {
     try { presetList.value = ST.listPresets() }
-    catch (e: any) { showToast('Could not list presets: ' + (e?.message || e)) }
+    catch (e: any) { showToast(t('shared.toast.listPresetsFailed', { msg: e?.message || e })) }
   }
 
   function loadPresetByName(name: string, opts: { silent?: boolean } = {}) {
     ST.invalidateCache()
     let data: PresetData | null
     try { data = ST.getPresetByName(name) }
-    catch (e: any) { showToast('Load failed: ' + (e?.message || e)); return }
-    if (!data) { showToast(`Preset not found: ${name}`); return }
+    catch (e: any) { showToast(t('shared.toast.loadFailed', { msg: e?.message || e })); return }
+    if (!data) { showToast(t('shared.toast.presetNotFound', { name })); return }
     applyLoadedPreset(data, name)
-    if (!opts.silent) showToast('Loaded: ' + name)
+    if (!opts.silent) showToast(t('shared.toast.loaded', { name }))
   }
   
 
@@ -291,8 +291,8 @@ export const usePresetStore = defineStore('main', () => {
     ST.invalidateCache()
     let name: string
     try { name = ST.getSelectedPresetName() }
-    catch (e: any) { showToast('Can\'t load selected preset in SillyTavern: ' + (e?.message || e)); return }
-    if (!name) { showToast('No preset currently selected in SillyTavern'); return }
+    catch (e: any) { showToast(t('shared.toast.cantLoadContext', { msg: e?.message || e })); return }
+    if (!name) { showToast(t('shared.toast.noPresetSelected')); return }
     loadPresetByName(name)
   }
 
@@ -301,7 +301,7 @@ export const usePresetStore = defineStore('main', () => {
     ST.invalidateCache()
     let name: string
     name = presetName.value
-    if (!name) { showToast('No preset currently selected in Preset Manager'); return }
+    if (!name) { showToast(t('shared.toast.noPresetSelected')); return }
     loadPresetByName(name)
   }
 
@@ -315,7 +315,7 @@ export const usePresetStore = defineStore('main', () => {
   }
 
   async function doSavePreset() {
-    if (!rawData.value) { showToast('No data to save'); return }
+    if (!rawData.value) { showToast(t('shared.toast.noDataToSave')); return }
     rawData.value.prompts = [...prompts.value]
     if (rawData.value.prompt_order?.length)
       rawData.value.prompt_order[0].order = exportOrder(order.value)
@@ -336,8 +336,8 @@ export const usePresetStore = defineStore('main', () => {
       presetName.value = name
       refreshPresetList() // saving under a new name adds an entry — keep the picker in sync
       dirty.value = false
-      showToast('Saved: ' + name)
-    } catch (e: any) { showToast(`Save failed: ${e.message}`) }
+      showToast(t('shared.toast.saved', { name }))
+    } catch (e: any) { showToast(t('shared.toast.saveFailed', { msg: e.message })) }
   }
 
   async function createPreset(name: string) {
@@ -351,8 +351,8 @@ export const usePresetStore = defineStore('main', () => {
       await ST.savePresetAs(name, blank)
       refreshPresetList()
       applyLoadedPreset(blank, name)
-      showToast('Created: ' + name)
-    } catch (e: any) { showToast('Create failed: ' + (e?.message || e)) }
+      showToast(t('shared.toast.created', { name }))
+    } catch (e: any) { showToast(t('shared.toast.createFailed', { msg: e?.message || e })) }
   }
   async function removeCurrentPreset() {
     const name = presetName.value
@@ -363,8 +363,8 @@ export const usePresetStore = defineStore('main', () => {
       const next = presetList.value[0]?.name
       if (next) loadPresetByName(next, { silent: true })
       else { rawData.value = null as any; presetName.value = ''; selIdx.value = -1 }
-      showToast('Deleted: ' + name)
-    } catch (e: any) { showToast('Delete failed: ' + (e?.message || e)) }
+      showToast(t('shared.toast.deleted', { name }))
+    } catch (e: any) { showToast(t('shared.toast.deleteFailed', { msg: e?.message || e })) }
   }
 
   /* ====== Block Ops ====== */
@@ -388,7 +388,7 @@ export const usePresetStore = defineStore('main', () => {
     tabsStore.requestListScroll('block')
   }
   function addBlock() {
-    if (!rawData.value) { showToast('Load a preset first'); return }
+    if (!rawData.value) { showToast(t('shared.toast.loadPresetFirst')); return }
     const id = 'custom_' + Date.now()
     prompts.value.push({
       identifier: id, name: 'New Block', role: 'system',
@@ -416,28 +416,36 @@ export const usePresetStore = defineStore('main', () => {
     selectedGi.value = new Set([selIdx.value])
     anchorGi.value = selIdx.value
     tabsStore.requestListScroll('block')
-    showToast('Created')
+    showToast(t('shared.toast.blockCreated'))
   }
-  function deleteBlock(gi: number) { confirmIdx.value = gi; confirmOpen.value = true }
-  function confirmDelete() {
-    const gi = confirmIdx.value
+  function deleteBlock(gi: number) {
     const node = flatNodes.value[gi]
-    if (!node) { confirmOpen.value = false; return }
-    const parent = node.parent
-    const idx = node.parentIdx
-    if (node.isGroup) {
-      parent.splice(idx, 1)
-    } else {
-      const id = (node.ref as OrderItem).identifier
-      parent.splice(idx, 1)
-      const pi = prompts.value.findIndex(p => p.identifier === id)
-      if (pi >= 0) prompts.value.splice(pi, 1)
-    }
-    if (selIdx.value === gi) selIdx.value = -1
-    selectedGi.value.delete(gi)
-    confirmOpen.value = false
-    rebuildVarIndex()
-    showToast('Deleted')
+    if (!node) return
+    const name = node.isGroup
+      ? (node.ref as OrderGroup).name || t('common.unnamed')
+      : prompts.value.find(p => p.identifier === (node.ref as OrderItem).identifier)?.name || t('common.new')
+    confirmStore.ask({
+      title: t('shared.confirm.deleteBlock.title'),
+      message: t('shared.confirm.deleteBlock.message', { name }),
+      confirmText: t('shared.confirm.deleteBlock.confirm'),
+      cancelText: t('shared.confirm.deleteBlock.cancel'),
+      onConfirm: () => {
+        const parent = node.parent
+        const idx = node.parentIdx
+        if (node.isGroup) {
+          parent.splice(idx, 1)
+        } else {
+          const id = (node.ref as OrderItem).identifier
+          parent.splice(idx, 1)
+          const pi = prompts.value.findIndex(p => p.identifier === id)
+          if (pi >= 0) prompts.value.splice(pi, 1)
+        }
+        if (selIdx.value === gi) selIdx.value = -1
+        selectedGi.value.delete(gi)
+        rebuildVarIndex()
+        showToast(t('shared.toast.blockDeleted'))
+      }
+    })
   }
   function hideBlock(gi: number) {
     const node = flatNodes.value[gi]
@@ -447,7 +455,7 @@ export const usePresetStore = defineStore('main', () => {
     parent.splice(idx, 1)
     if (selIdx.value === gi) selIdx.value = -1
     selectedGi.value.delete(gi)
-    showToast('Hidden')
+    showToast(t('shared.toast.blockHidden'))
   }
   function addHiddenBlock(identifier: string) {
     const item: OrderItem = { identifier, enabled: true }
@@ -470,7 +478,7 @@ export const usePresetStore = defineStore('main', () => {
       anchorGi.value = selIdx.value
     }
     tabsStore.requestListScroll('block')
-    showToast('Added')
+    showToast(t('shared.toast.blockAdded'))
   }
   function toggleBlock(gi: number) {
     const node = flatNodes.value[gi]
@@ -503,7 +511,7 @@ export const usePresetStore = defineStore('main', () => {
     const topLevelGi = Array.from(selectedGi.value)
       .filter(gi => flatNodes.value[gi]?.parent === order.value)
       .sort((a, b) => a - b)
-    if (topLevelGi.length < 2) { showToast('Select 2+ top-level blocks'); return }
+    if (topLevelGi.length < 2) { showToast(t('shared.toast.select2PlusBlocks')); return }
     // items 按 gi（视觉顺序）升序取，保持原始顺序
     const items = topLevelGi.map(gi => order.value[flatNodes.value[gi].parentIdx])
     // indices 单独降序排序，用于从后往前删除（避免索引漂移）
@@ -524,7 +532,7 @@ export const usePresetStore = defineStore('main', () => {
     selectedGi.value = new Set()
     anchorGi.value = -1
     selIdx.value = -1
-    showToast('Bound ' + items.length + ' blocks')
+    showToast(t('shared.toast.boundBlocks', { count: items.length }))
   }
   function unbindGroup(gi: number) {
     const node = flatNodes.value[gi]
@@ -535,7 +543,7 @@ export const usePresetStore = defineStore('main', () => {
     parent.splice(idx, 1, ...group.children)
     selectedGi.value = new Set()
     selIdx.value = -1
-    showToast('Unbound')
+    showToast(t('shared.toast.unbound'))
   }
   function toggleGroupCollapse(gi: number) {
     const node = flatNodes.value[gi]
@@ -614,7 +622,7 @@ export const usePresetStore = defineStore('main', () => {
     ls[r.line] = line.substring(0, r.col) + searchReplace.value + line.substring(r.col + r.ml)
     p.content = ls.join('\n')
     doSearch()
-    showToast('Replaced 1')
+    showToast(t('shared.toast.replaced1'))
   }
   function replaceAll() {
     const q = searchQuery.value
@@ -805,10 +813,10 @@ export const usePresetStore = defineStore('main', () => {
       }
       previewBlockGroups.value = groups
       previewMode.value = 'blocks'
-      showToast(`Rendered ${groups.length} block(s)`)
+      showToast(t('shared.toast.renderedBlocks', { count: groups.length }))
     } catch (e: any) {
       previewError.value = e?.message || String(e)
-      showToast('Preview failed: ' + previewError.value)
+      showToast(t('shared.toast.previewFailed', { msg: previewError.value }))
     } finally {
       previewLoading.value = false
     }
@@ -827,10 +835,10 @@ export const usePresetStore = defineStore('main', () => {
       const msgs = await ST.getFinalRequestMessages()
       previewRawText.value = msgs.map(m => `[${(m.role || '?').toUpperCase()}]\n${m.content}`).join('\n\n')
       previewMode.value = 'raw'
-      showToast('Rendered full prompt')
+      showToast(t('shared.toast.renderedFullPrompt'))
     } catch (e: any) {
       previewError.value = e?.message || String(e)
-      showToast('Preview failed: ' + previewError.value)
+      showToast(t('shared.toast.previewFailed', { msg: previewError.value }))
     } finally {
       previewLoading.value = false
     }
@@ -856,16 +864,16 @@ export const usePresetStore = defineStore('main', () => {
     previewOpen, previewMode, previewLoading, previewError,
     previewCollapsed, previewBlockGroups, previewRawText,
     regexScripts, addRegexScript, deleteRegexScript, reorderRegexScript,
-    settingsOpen, confirmOpen, confirmIdx, hiddenOpen, copyPanelOpen, dirty,
+    settingsOpen, hiddenOpen, copyPanelOpen, dirty,
     currentBlock, hasData, hiddenBlocks,
     editorJump, requestEditorJump,
     loadFromContext, doSavePreset, refreshPresetList, switchPreset, createPreset, removeCurrentPreset, reloadPreset,
-    selectBlock, addBlock, deleteBlock, confirmDelete, hideBlock, addHiddenBlock,
+    selectBlock, addBlock, deleteBlock, hideBlock, addHiddenBlock,
     toggleBlock, reorderBlock,
     bindSelected, unbindGroup, toggleGroupCollapse,
     doSearch, navSearch, jumpToSearchResult, replaceCurrent, replaceAll,
     rebuildVarIndex, filterVarNav, navVar, jumpToVarOp,
     generatePreviewBlocks, generatePreviewRaw, togglePreviewBlock, toggleAllPreviewBlocks,
-    saveSettings, resetSettings, showToast,
+    saveSettings, resetSettings, showToast, t, currentLocale,
   }
 })

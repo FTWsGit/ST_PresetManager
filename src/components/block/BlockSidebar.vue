@@ -1,14 +1,14 @@
 <template>
   <aside class="pm-sidebar" ref="sidebarRef" :style="{ width: store.settings.sidebarWidth + 'px' }">
     <div class="pm-sidebar-header">
-      <span>Prompt Blocks ({{ store.order.length }})</span>
+      <span>{{ store.t('block.sidebar.title', { count: store.order.length }) }}</span>
       <ListToolbar :count="store.prompts.length">
-        <button class="pm-btn" @click="store.addBlock()">+ New</button>
-        <button class="pm-btn" @click="store.hiddenOpen = true">+ Hidden</button>
+        <button class="pm-btn" @click="store.addBlock()">{{ store.t('block.sidebar.newBlock') }}</button>
+        <button class="pm-btn" @click="store.hiddenOpen = true">{{ store.t('block.sidebar.hiddenBlock') }}</button>
       </ListToolbar>
       <div class="pm-sidebar-tools">
-        <button class="pm-btn" :disabled="!canBind" @click="store.bindSelected()">🔗 Bind</button>
-        <button class="pm-btn" :disabled="!canUnbind" @click="unbindCurrent()">🔓 Unbind</button>
+        <button class="pm-btn" :disabled="!canBind" @click="store.bindSelected()">{{ store.t('block.sidebar.bind') }}</button>
+        <button class="pm-btn" :disabled="!canUnbind" @click="unbindCurrent()">{{ store.t('block.sidebar.unbind') }}</button>
       </div>
     </div>
     <div class="pm-block-list" ref="listRef">

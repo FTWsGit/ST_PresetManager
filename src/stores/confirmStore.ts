@@ -49,7 +49,7 @@ export const useConfirmStore = defineStore('confirm', () => {
   const open = ref(false)
   const title = ref('')
   const message = ref('')
-  const confirmText = ref('Delete')
+  const confirmText = ref('OK')
   const cancelText = ref('Cancel')
   const danger = ref(true)
   let onConfirmCb: (() => void) | null = null
@@ -58,7 +58,7 @@ export const useConfirmStore = defineStore('confirm', () => {
   function ask(opts: ConfirmOptions) {
     title.value = opts.title
     message.value = opts.message
-    confirmText.value = opts.confirmText ?? 'Delete'
+    confirmText.value = opts.confirmText ?? 'OK'
     cancelText.value = opts.cancelText ?? 'Cancel'
     danger.value = opts.danger ?? true
     onConfirmCb = opts.onConfirm

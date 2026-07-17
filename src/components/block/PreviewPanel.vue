@@ -2,28 +2,28 @@
   <div class="pm-preview-panel" :class="{ float: store.settings.previewFloat }" :style="{ width: store.settings.previewWidth + 'px' }">
     <div class="pm-right-resize-handle" :class="{ active: resize.active.value }" @mousedown="resize.onMouseDown"></div>
     <div class="pm-rp-header">
-      <span>👁 Prompt Preview</span>
+      <span>{{ store.t('block.preview.title') }}</span>
       <div class="pm-row-tight">
-        <button v-if="store.previewMode === 'blocks'" class="pm-btn icon-btn" title="Collapse/Expand all" @click="store.toggleAllPreviewBlocks()">▾</button>
-        <button class="pm-btn icon-btn" :class="{ active: store.settings.previewFloat }" title="Toggle float mode" @click="toggleFloat">📌</button>
+        <button v-if="store.previewMode === 'blocks'" class="pm-btn icon-btn" :title="store.t('block.preview.collapseExpand')" @click="store.toggleAllPreviewBlocks()">▾</button>
+        <button class="pm-btn icon-btn" :class="{ active: store.settings.previewFloat }" :title="store.t('block.preview.toggleFloat')" @click="toggleFloat">📌</button>
         <button class="pm-btn close-btn compact" @click="store.previewOpen = false">✕</button>
       </div>
     </div>
     <div class="pp-tools">
       <div class="pm-preview-tabs">
-        <button class="pm-preview-tab" :class="{ active: store.previewMode === 'blocks' }" @click="store.previewMode = 'blocks'">Per-Block (Precise)</button>
-        <button class="pm-preview-tab" :class="{ active: store.previewMode === 'raw' }" @click="store.previewMode = 'raw'">Full Text (Raw)</button>
+        <button class="pm-preview-tab" :class="{ active: store.previewMode === 'blocks' }" @click="store.previewMode = 'blocks'">{{ store.t('block.preview.modeBlocks') }}</button>
+        <button class="pm-preview-tab" :class="{ active: store.previewMode === 'raw' }" @click="store.previewMode = 'raw'">{{ store.t('block.preview.modeRaw') }}</button>
       </div>
       <p class="pp-mode-hint">
-        <template v-if="store.previewMode === 'blocks'">Real per-block rendering from SillyTavern's own prompt manager. Highlighted text was substituted in (macros/regex/etc) — not literally in the block's source.</template>
-        <template v-else>The exact `messages` array SillyTavern was about to send to the API — captured off a real generation that's cancelled immediately after, so nothing actually gets sent.</template>
+        <template v-if="store.previewMode === 'blocks'">{{ store.t('block.preview.hintBlocks') }}</template>
+        <template v-else>{{ store.t('block.preview.hintRaw') }}</template>
       </p>
       <div class="pm-row-mt">
         <button class="pm-btn accent" :disabled="store.previewLoading" @click="generate()">
-          <template v-if="store.previewLoading">⏳ Generating…</template>
-          <template v-else>▶ Generate</template>
+          <template v-if="store.previewLoading">{{ store.t('block.preview.generating') }}</template>
+          <template v-else>{{ store.t('block.preview.generate') }}</template>
         </button>
-        <button class="pm-btn" @click="copyPreview()">📋 Copy</button>
+        <button class="pm-btn" @click="copyPreview()">{{ store.t('block.preview.copy') }}</button>
       </div>
       <p v-if="store.previewError" class="pp-error">⚠ {{ store.previewError }}</p>
     </div>
@@ -34,25 +34,25 @@
             <div class="pb-header" @click="store.togglePreviewBlock(g.id)">
               <span v-if="g.isMarker" class="pb-role pb-marker">MARKER</span>
               <span class="pb-name">{{ g.name }}</span>
-              <span class="pb-msg-count" v-if="g.messages.length > 1">{{ g.messages.length }} messages</span>
-              <button class="pb-toggle" title="Collapse/Expand">▾</button>
+              <span class="pb-msg-count" v-if="g.messages.length > 1">{{ g.messages.length }} {{ store.t('common.messages') }}</span>
+              <button class="pb-toggle" :title="store.t('block.preview.collapseExpandSingle')">▾</button>
             </div>
             <div class="pb-body">
               <div v-for="(m, mi) in g.messages" :key="mi" class="pb-msg">
                 <div class="pb-msg-meta">
                   <span class="pb-role" :class="roleClass(m.role)">{{ m.role.toUpperCase() }}</span>
-                  <span class="pb-tokens">{{ m.tokens }} tok</span>
+                  <span class="pb-tokens">{{ m.tokens }} {{ store.t('common.tokens') }}</span>
                 </div>
                 <pre class="pb-msg-text" v-html="renderSegments(m.segments)"></pre>
               </div>
             </div>
           </div>
         </template>
-        <p v-else-if="!store.previewLoading" class="pm-muted">Click "Generate" for a real per-block render (this runs an actual dry-run generation).</p>
+        <p v-else-if="!store.previewLoading" class="pm-muted">{{ store.t('block.preview.emptyBlocks') }}</p>
       </template>
       <template v-else>
         <pre v-if="store.previewRawText" class="pp-raw">{{ store.previewRawText }}</pre>
-        <p v-else-if="!store.previewLoading" class="pm-muted">Click "Generate" to capture the final request — this briefly starts a real generation and cancels it right after.</p>
+        <p v-else-if="!store.previewLoading" class="pm-muted">{{ store.t('block.preview.emptyRaw') }}</p>
       </template>
     </div>
   </div>
@@ -97,8 +97,8 @@ async function copyPreview() {
   const text = store.previewMode === 'blocks'
     ? store.previewBlockGroups.flatMap(g => g.messages.map(m => m.segments.map(s => s.text).join(''))).join('\n\n')
     : store.previewRawText
-  if (!text.trim()) { store.showToast('Nothing to copy'); return }
+  if (!text.trim()) { store.showToast(store.t('shared.toast.nothingToCopy')); return }
   const ok = await copyToHostClipboard(text)
-  store.showToast(ok ? 'Copied' : 'Copy failed — see console for details')
+  store.showToast(ok ? store.t('shared.toast.copied') : store.t('shared.toast.copyFailed'))
 }
 </script>

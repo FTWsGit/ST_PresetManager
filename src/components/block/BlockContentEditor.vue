@@ -11,7 +11,7 @@
       <span class="pm-rce-name">{{ store.currentBlock?.name || store.currentBlock?.identifier }}</span>
       <span v-if="store.currentBlock" class="pm-block-role" :class="roleClass(store.currentBlock.role)">{{ store.currentBlock.role }}</span>
       <span class="pm-spacer"></span>
-      <button class="pm-btn sm" :class="{ active: tabsStore.settingsDockOpen }" @click="tabsStore.toggleSettingsDock()" title="设置面板（名称/角色）">⚙</button>
+      <button class="pm-btn sm" :class="{ active: tabsStore.settingsDockOpen }" @click="tabsStore.toggleSettingsDock()" :title="store.t('block.sidebar.settingsPanel')">⚙</button>
     </div>
     <HighlightedEditor
       ref="editorRef"
@@ -19,6 +19,9 @@
       :jump="store.editorJump"
       :line-class="lineClass"
       enable-var-click
+      :status-cursor-label="store.t('shared.highlightedEditor.cursor')"
+      :status-chars-label="store.t('common.chars')"
+      :status-lines-label="store.t('common.lines')"
       @var-click="onVarClick"
       @var-click-miss="store.hideVarPopup()"
     />

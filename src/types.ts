@@ -98,6 +98,7 @@ export interface Settings {
   previewFloat: boolean
   settingsDockWidth: number
   settingsDockFloat: boolean
+  language: 'zh-CN' | 'en'
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -116,6 +117,7 @@ export const DEFAULT_SETTINGS: Settings = {
   previewFloat: false, 
   settingsDockWidth: 320,
   settingsDockFloat: false,
+  language: 'zh-CN',
 }
 
 /** Cap on how many search-result rows SearchPanel.vue renders in the results list — doSearch()
@@ -132,12 +134,12 @@ export const FONT_OPTIONS = [
   { name: 'Ubuntu Mono', value: "'Ubuntu Mono',monospace" },
 ]
 
-export const SYNTAX_LABELS: Record<string, string> = {
-  'hl-b': 'Brackets {{ }}', 'hl-k': 'Keywords', 'hl-s': 'Separators (::)',
-  'hl-v': 'Variable Names', 'hl-c': 'Values', 'hl-cm': 'Comments',
-  'hl-m': 'Macro Content', 'hl-sq': "Single Quotes", 'hl-dq': "Double Quotes",
-  'hl-ab': 'Angle Brackets < >', 'hl-sb': 'Square Brackets [ ]',
-}
+export const SYNTAX_LABEL_KEYS = {
+  'hl-b': 'syntax.hl-b', 'hl-k': 'syntax.hl-k', 'hl-s': 'syntax.hl-s',
+  'hl-v': 'syntax.hl-v', 'hl-c': 'syntax.hl-c', 'hl-cm': 'syntax.hl-cm',
+  'hl-m': 'syntax.hl-m', 'hl-sq': 'syntax.hl-sq', 'hl-dq': 'syntax.hl-dq',
+  'hl-ab': 'syntax.hl-ab', 'hl-sb': 'syntax.hl-sb',
+} as const
 
 export interface RegexScript {
   id: string
@@ -156,17 +158,17 @@ export interface RegexScript {
   [k: string]: any
 }
 
-/**No value 4 here*/
-export const REGEX_PLACEMENT_OPTIONS: { value: number; label: string }[] = [
-  { value: 1, label: '用户输入' },
-  { value: 2, label: 'AI 输出' },
-  { value: 3, label: '快捷命令' },
-  { value: 5, label: '世界书' },
-  { value: 6, label: '推理' },
-]
+/**No value 4 here, decided by SillyTavern-v1.18*/
+export const REGEX_PLACEMENT_OPTIONS = [
+  { value: 1, labelKey: 'regex.placement.userInput' },
+  { value: 2, labelKey: 'regex.placement.aiOutput' },
+  { value: 3, labelKey: 'regex.placement.quickCommand' },
+  { value: 5, labelKey: 'regex.placement.worldInfo' },
+  { value: 6, labelKey: 'regex.placement.reasoning' },
+] as const
 
-export const REGEX_SUBSTITUTE_OPTIONS: { value: number; label: string }[] = [
-  { value: 0, label: '不替换' },
-  { value: 1, label: '替换（原始）' },
-  { value: 2, label: '替换（转义）' },
-]
+export const REGEX_SUBSTITUTE_OPTIONS = [
+  { value: 0, labelKey: 'regex.substitute.none' },
+  { value: 1, labelKey: 'regex.substitute.raw' },
+  { value: 2, labelKey: 'regex.substitute.escaped' },
+] as const

@@ -1,27 +1,24 @@
 <template>
   <div class="pm-editor-panel pm-rce" v-if="script">
     <div class="pm-editor-meta">
-      <span class="pm-rce-name">{{ script.scriptName || '(未命名)' }}</span>
+      <span class="pm-rce-name">{{ script.scriptName || store.t('common.unnamed') }}</span>
       <span class="pm-spacer"></span>
-      <button class="pm-btn sm" :class="{ active: mode === 'edit' }" @click="mode = 'edit'">✏️ 编辑</button>
-      <button class="pm-btn sm" :class="{ active: mode === 'preview' }" @click="mode = 'preview'">👁 预览</button>
+      <button class="pm-btn sm" :class="{ active: mode === 'edit' }" @click="mode = 'edit'">{{ store.t('regex.editor.edit') }}</button>
+      <button class="pm-btn sm" :class="{ active: mode === 'preview' }" @click="mode = 'preview'">{{ store.t('regex.editor.preview') }}</button>
       <template v-if="mode === 'preview'">
-        <button class="pm-btn sm" :class="{ active: !renderHtml }" @click="renderHtml = false">纯文本</button>
-        <button class="pm-btn sm" :class="{ active: renderHtml }" @click="renderHtml = true">HTML</button>
+        <button class="pm-btn sm" :class="{ active: !renderHtml }" @click="renderHtml = false">{{ store.t('regex.editor.plainText') }}</button>
+        <button class="pm-btn sm" :class="{ active: renderHtml }" @click="renderHtml = true">{{ store.t('regex.editor.html') }}</button>
       </template>
-      <button class="pm-btn sm" :class="{ active: tabsStore.settingsDockOpen }" @click="tabsStore.toggleSettingsDock()" title="设置面板">⚙</button>
+      <button class="pm-btn sm" :class="{ active: tabsStore.settingsDockOpen }" @click="tabsStore.toggleSettingsDock()" :title="store.t('regex.editor.settingsPanel')">⚙</button>
     </div>
 
-    <!-- Edit mode: same HighlightedEditor as the block content editor (line numbers, macro
-         syntax highlight, font-size/family from Settings, bracket/quote auto-close) — this used
-         to be a bare <textarea>, which is why it never picked up font settings or highlighting.
-         Rendered as a flex-column sibling of the meta bar (not nested inside .pm-rce-body), same
-         shell shape as BlockContentEditor.vue, so HighlightedEditor's internal statusbar sits
-         below the text area instead of squeezed beside it. -->
     <HighlightedEditor v-if="mode === 'edit'"
       ref="editorRef"
       v-model="replaceStringModel"
-      placeholder="用 {{match}} 引用整个匹配，$1 / $2 引用捕获组" />
+      :placeholder="store.t('regex.editor.placeholder')"
+      :status-cursor-label="store.t('shared.highlightedEditor.cursor')"
+      :status-chars-label="store.t('common.chars')"
+      :status-lines-label="store.t('common.lines')" />
 
     <div v-else class="pm-rce-body">
       <div v-if="!renderHtml" class="pm-rce-preview">{{ previewText }}</div>
@@ -29,10 +26,10 @@
     </div>
 
     <div class="pm-rce-testbar">
-      <label class="pm-rx-label" style="margin:0">测试文本</label>
-      <textarea class="pm-rce-testinput" rows="3" v-model="testInput" placeholder="粘贴一段消息文本，切到「预览」看效果…"></textarea>
-      <p v-if="!findValid" class="pm-rx-err">查找正则语法无效，预览会原样返回输入文本</p>
-      <p class="pm-muted" style="font-size:12px">预览只做本地查找/替换/修剪，不解析宏、不代表作用范围与深度限制。</p>
+      <label class="pm-rx-label" style="margin:0">{{ store.t('regex.editor.testText') }}</label>
+      <textarea class="pm-rce-testinput" rows="3" v-model="testInput" :placeholder="store.t('regex.editor.testPlaceholder')"></textarea>
+      <p v-if="!findValid" class="pm-rx-err">{{ store.t('regex.editor.invalidFindRegex') }}</p>
+      <p class="pm-muted" style="font-size:12px">{{ store.t('regex.editor.previewLimitation') }}</p>
     </div>
   </div>
 </template>
@@ -58,7 +55,7 @@ const findValid = computed(() => !script.value || !script.value.findRegex || !!p
 const previewText = computed(() => {
   if (!script.value || !testInput.value) return ''
   try { return applyRegexScript(testInput.value, script.value) }
-  catch (e: any) { return '(预览出错: ' + (e?.message || e) + ')' }
+  catch (e: any) { return store.t('regex.editor.previewError', { msg: e?.message || e }) }
 })
 
 // v-model bridge into the currently-selected script's replaceString — same pattern as
