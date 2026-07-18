@@ -48,6 +48,13 @@ export default {
   'shared.header.mode.block': 'Presets',
   'shared.header.mode.regex': 'Regex',
 
+  // Mobile-only header controls (App.vue) — ☰ opens the sidebar as a left drawer, ⋯ opens the
+  // tools action sheet. Everything the action sheet lists reuses the existing shared.header.*
+  // labels above (mode.block/mode.regex/reload/copyBlocks/search/settings/varNav/preview/
+  // newPreset/deletePreset), so only these two container labels are new.
+  'shared.mobile.sidebar': 'Sidebar',
+  'shared.mobile.tools': 'More Tools',
+
   // ---- shared.settings ----
   'shared.settings.title': 'Editor Settings',
   'shared.settings.language': 'Language',
@@ -118,6 +125,7 @@ export default {
   'shared.prompt.newPreset.title': 'New Preset Name',
   'shared.prompt.newPreset.placeholder': 'Preset name',
   'shared.prompt.newPreset.confirm': 'Create',
+  'shared.prompt.newPreset.cancel': 'Cancel',
 
   // ---- shared.tabBar ----
   'shared.tabBar.close': 'Close',

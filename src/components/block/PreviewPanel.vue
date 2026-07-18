@@ -1,6 +1,6 @@
 <template>
   <div class="pm-preview-panel" :class="{ float: store.settings.previewFloat }" :style="{ width: store.settings.previewWidth + 'px' }">
-    <div class="pm-right-resize-handle" :class="{ active: resize.active.value }" @mousedown="resize.onMouseDown"></div>
+    <div class="pm-right-resize-handle" :class="{ active: resize.active.value }" @pointerdown="resize.onPointerDown"></div>
     <div class="pm-rp-header">
       <span>{{ store.t('block.preview.title') }}</span>
       <div class="pm-row-tight">

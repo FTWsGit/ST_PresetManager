@@ -14,7 +14,7 @@
   --hl-b:#58b8c0;--hl-k:#a078c0;--hl-s:#555570;--hl-v:#c8a045;--hl-c:#68b868;
   --hl-cm:#555570;--hl-m:#6090c0;--hl-sq:#c89850;--hl-dq:#78b0c0;--hl-ab:#60a870;--hl-sb:#d08a5c;
   font-family:var(--pm-fm);color:var(--pm-tx);font-size:16px;line-height:1.5;
-  position:relative;
+  position:relative;width:100%;height:100%;
 }
 .st-pm *,.st-pm *::before,.st-pm *::after{box-sizing:border-box;margin:0;padding:0}
 .st-pm button{font-family:var(--pm-fm);cursor:pointer;border:none;background:none;color:var(--pm-tx);font-size:13px}
@@ -27,11 +27,11 @@
 .st-pm ::-webkit-scrollbar-thumb:hover{background:#3a3c4e}
 
 /* FAB */
-.pm-fab{position:fixed;bottom:24px;right:24px;width:48px;height:48px;border-radius:50%;background:var(--pm-bg-e);border:1px solid rgba(200,149,74,.4);color:var(--pm-ac);font-size:15px;font-weight:700;cursor:pointer;z-index:9999;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(0,0,0,.5);transition:all .2s}
+.pm-fab{position:absolute;bottom:24px;right:24px;width:48px;height:48px;border-radius:50%;background:var(--pm-bg-e)!important;border:1px solid rgba(200,149,74,.4)!important;color:var(--pm-ac);font-size:15px;font-weight:700;cursor:pointer;z-index:9999;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(0,0,0,.5);transition:all .2s;pointer-events:auto!important}
 .pm-fab:hover{transform:scale(1.1);box-shadow:0 0 24px rgba(200,149,74,.3)}
 
 /* Panel (fullscreen overlay) */
-.pm-panel{position:fixed;inset:0;z-index:100000;display:flex;flex-direction:column;background:var(--pm-bg);color:var(--pm-tx);font-family:var(--pm-fm);overflow:hidden}
+.pm-panel{position:absolute;inset:0;z-index:100000;display:flex;flex-direction:column;background:var(--pm-bg);color:var(--pm-tx);font-family:var(--pm-fm);overflow:hidden;pointer-events:auto}
 
 /* Header/Toolbar */
 .pm-header{display:flex;align-items:center;gap:6px;padding:8px 16px;background:var(--pm-bg-s);border-bottom:1px solid var(--pm-border);min-height:44px;flex-shrink:0;flex-wrap:wrap}
@@ -65,10 +65,10 @@
 .pm-main{display:flex;flex:1;overflow:hidden;position:relative}
 
 /* Resize handles */
-.pm-resize-handle{width:5px;cursor:col-resize;background:transparent;flex-shrink:0;position:relative;z-index:5}
+.pm-resize-handle{width:5px;cursor:col-resize;background:transparent;flex-shrink:0;position:relative;z-index:5;touch-action:none}
 .pm-resize-handle::after{content:'';position:absolute;top:0;bottom:0;left:1px;width:3px;background:var(--pm-border);transition:background var(--pm-tr)}
 .pm-resize-handle:hover::after,.pm-resize-handle.active::after{background:var(--pm-ac)}
-.pm-right-resize-handle{position:absolute;left:-3px;top:0;bottom:0;width:7px;cursor:col-resize;z-index:5;background:transparent}
+.pm-right-resize-handle{position:absolute;left:-3px;top:0;bottom:0;width:7px;cursor:col-resize;z-index:5;background:transparent;touch-action:none}
 .pm-right-resize-handle::after{content:'';position:absolute;top:0;bottom:0;right:1px;width:3px;background:var(--pm-border);transition:background var(--pm-tr)}
 .pm-right-resize-handle:hover::after,.pm-right-resize-handle.active::after{background:var(--pm-ac)}
 
@@ -291,7 +291,7 @@
 
 
 /* Var click popup — small floating popup near a clicked {{...var...}}, ported from MiMo */
-.st-pm .pm-var-popup{position:fixed;z-index:100003;background:var(--pm-bg-e);border:1px solid rgba(200,149,74,.4);border-radius:var(--pm-r);box-shadow:0 8px 30px rgba(0,0,0,.45);min-width:340px;max-width:520px;display:flex;flex-direction:column;animation:pm-fadeUp .12s ease}
+.st-pm .pm-var-popup{position:absolute;z-index:100003;background:var(--pm-bg-e);border:1px solid rgba(200,149,74,.4);border-radius:var(--pm-r);box-shadow:0 8px 30px rgba(0,0,0,.45);min-width:340px;max-width:520px;display:flex;flex-direction:column;animation:pm-fadeUp .12s ease;pointer-events:auto}
 .st-pm .vp-header{display:flex;align-items:center;gap:6px;padding:7px 10px;border-bottom:1px solid var(--pm-border);font-size:12px;flex-shrink:0}
 .st-pm .vp-icon{color:var(--hl-v);font-size:13px}
 .st-pm .vp-varname{color:var(--hl-v);font-weight:600;font-family:var(--pm-fc);font-size:14px}
@@ -370,7 +370,7 @@
 
 
 /* Modals */
-.pm-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:10001;backdrop-filter:blur(3px);z-index:100001;}
+.pm-modal-overlay{position:absolute;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:10001;backdrop-filter:blur(3px);z-index:100001;}
 .pm-modal{background:var(--pm-bg-e);border:1px solid var(--pm-border);border-radius:var(--pm-r);padding:24px;min-width:360px;max-width:500px;max-height:70vh;display:flex;flex-direction:column}
 .pm-modal h3{font-size:15px;font-weight:700;margin-bottom:16px}
 .pm-modal-list{flex:1;overflow-y:auto;margin-bottom:16px;max-height:300px}
@@ -431,7 +431,7 @@
 .pm-btn.sm{padding:4px 10px}
 
 /* Toast */
-.pm-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--pm-bg-a);border:1px solid var(--pm-border);border-radius:var(--pm-r);padding:9px 18px;font-size:12px;font-weight:500;z-index:100002;;transition:transform .3s ease,opacity .3s ease;opacity:0;pointer-events:none;white-space:nowrap}
+.pm-toast{position:absolute;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--pm-bg-a);border:1px solid var(--pm-border);border-radius:var(--pm-r);padding:9px 18px;font-size:12px;font-weight:500;z-index:100002;;transition:transform .3s ease,opacity .3s ease;opacity:0;pointer-events:none;white-space:nowrap}
 .pm-toast.show{transform:translateX(-50%) translateY(0);opacity:1}
 
 /* Animations */
@@ -454,8 +454,8 @@
 .pm-preset-select:hover{color:var(--pm-tx);border-color:rgba(200,149,74,.4)}
 .pm-preset-select:focus-visible{outline:2px solid var(--pm-ac);outline-offset:1px}
 
-.pm-panel{position:fixed;inset:0;z-index:100000;}
-.pm-modal-overlay{position:fixed;inset:0;z-index:100001;}
+.pm-panel{position:absolute;inset:0;z-index:100000;}
+.pm-modal-overlay{position:absolute;inset:0;z-index:100001;}
 .pm-toast{z-index:100002;}
 
 /* ===== TabBar.vue ===== */
@@ -502,3 +502,200 @@
 
 .pm-editor-col{display:flex;flex-direction:column;flex:1;min-width:0}
 .pm-editor-row{display:flex;flex:1;overflow:hidden;min-height:0}
+
+/* ==========================================================================
+   Mobile layout (<= MOBILE_BREAKPOINT in hostEnv.ts, kept in sync with the
+   px value below by hand — CSS can't read the TS constant, so if you change
+   one, change the other).
+
+   REVISION NOTE: an earlier version of this block tried to keep every panel
+   in normal document flow and stack them into a single column, showing only
+   one at a time via display:none toggling (.pm-mobile-hide). That caused
+   real bugs in practice (nested/nonsensical scroll containers once
+   `.pm-main` itself became `overflow-y:auto` while its flex children *also*
+   scroll internally — "what scrolls and what you see stop matching up" —
+   plus `.float` panels got forced out of floating mode, breaking their own
+   toggle). This version instead takes panels OUT of flow entirely on
+   mobile (position:absolute, anchored to the single position:fixed wrapper
+   set up in main.ts — see its comment for why every overlay in this app
+   shares ONE fixed anchor instead of each being independently
+   position:fixed) and slides them on/off screen as overlays. Only
+   `.pm-editor-col` (the actual prompt editor) stays in normal flow, full
+   width — it's the one thing that should always just be "the page" on a
+   phone. This is the standard off-canvas-drawer / bottom-sheet pattern:
+   nothing here fights the editor's own scroll container for space, so
+   there's no layering ambiguity to begin with.
+
+     - .pm-sidebar (block/regex list) slides in from the LEFT, toggled by
+       the ☰ button in the mobile header — see App.vue's mobileDrawerVisible
+       state and the .pm-mobile-hamburger button.
+     - .pm-right-panel (var nav + settings dock share this class) and
+       .pm-preview-panel become BOTTOM SHEETS instead — slide up from the
+       bottom, ~82vh tall. These are reached via the mobile header's ⋯
+       "tools" button, which opens a small action-sheet listing them (see
+       .pm-mobile-tools-sheet below) rather than cramming 8+ buttons into
+       one header row, which is its own usability problem on a ~360px
+       screen independent of the panel-layering bugs above.
+     - Resize handles are pointless with no side-by-side neighbor to size
+       against, so they're hidden.
+     - A shared .pm-mobile-backdrop dims the editor behind whichever
+       drawer/sheet is open and closes it on tap.
+   ========================================================================== */
+@media (max-width: 720px) {
+  .pm-header{padding:6px 8px;gap:4px}
+  .pm-btn{padding:5px 9px;font-size:13px}
+  .pm-preset-sel,.pm-preset-select,.pm-preset-name{max-width:90px}
+
+  .pm-main{position:relative;overflow:hidden}
+  .pm-editor-col{width:100% !important}
+
+  /* Sidebar: left slide-in drawer. width needs !important — <aside> carries its own inline
+     `style="width: ...px"` bound to store.settings.sidebarWidth (the desktop resize-drag value),
+     and an inline style otherwise always wins over any class selector regardless of source
+     order, @media or not. */
+  .pm-sidebar{
+    position:absolute;top:0;bottom:0;left:0;
+    z-index:150;
+    width:85vw !important;max-width:340px;
+    transform:translateX(-100%);
+    box-shadow:6px 0 40px rgba(0,0,0,.6);
+    transition:transform .25s ease;
+  }
+  .pm-sidebar.pm-mobile-drawer-open{transform:translateX(0)}
+
+  /* Var Nav / Settings Dock / Preview: bottom sheets. Written as compound
+     selectors matching the `.float` variant too (`.pm-right-panel.float` /
+     `.pm-preview-panel.float` are defined earlier in this file, OUTSIDE any
+     media query, with position:absolute) — matching specificity (2 classes)
+     plus later source order is what lets this win the cascade regardless of
+     whether the user has "float mode" toggled on, instead of relying on a
+     fragile specificity accident. */
+  .pm-right-panel,
+  .pm-right-panel.float,
+  .pm-preview-panel,
+  .pm-preview-panel.float{
+    position:absolute;left:0;right:0;top:auto;bottom:0;
+    z-index:150;
+    width:100% !important;
+    height:82vh;max-height:82vh;
+    border-radius:16px 16px 0 0;
+    box-shadow:0 -8px 40px rgba(0,0,0,.6);
+    transform:translateY(100%);
+    transition:transform .25s ease;
+  }
+  .pm-right-panel.pm-mobile-drawer-open,
+  .pm-preview-panel.pm-mobile-drawer-open{transform:translateY(0)}
+  /* Small grab-handle affordance at the top of each sheet, standard bottom-sheet visual cue.
+     Needs the panel's own header pushed down a bit so the grip doesn't sit on top of its text. */
+  .pm-right-panel::before,
+  .pm-preview-panel::before{
+    content:'';position:absolute;top:8px;left:50%;
+    width:36px;height:4px;border-radius:2px;
+    background:var(--pm-border);transform:translateX(-50%);
+  }
+  .pm-right-panel .pm-rp-header,
+  .pm-preview-panel .pm-rp-header{padding-top:20px}
+
+  .pm-resize-handle,.pm-right-resize-handle{display:none}
+
+  /* Shared dimmed backdrop behind whichever drawer/sheet is open — see
+     App.vue's mobileDrawerVisible + closeMobileDrawer(). */
+  .pm-mobile-backdrop{
+    position:absolute;inset:0;z-index:140;
+    background:rgba(0,0,0,.5);
+  }
+
+  /* Compact mobile header row: App.vue renders a different, shorter button
+     set on mobile (☰ / Save / preset name / ⋯ / ✕) instead of the full
+     desktop row — 8+ buttons don't fit a ~360px header no matter how much
+     padding gets trimmed, so the overflow buttons move into the ⋯ tools
+     sheet below rather than getting squeezed. */
+  .pm-mobile-hamburger,.pm-mobile-tools-btn{
+    width:36px;height:36px;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;
+    font-size:16px;background:transparent;border:1px solid var(--pm-border);
+    border-radius:var(--pm-rs);color:var(--pm-tx);
+  }
+
+  /* ⋯ tools action sheet — compact bottom sheet, distinct from the full-height
+     ones above (this one just lists actions/entry points, it isn't a panel
+     with its own scrollable content). */
+  .pm-mobile-tools-sheet{
+    position:absolute;left:0;right:0;bottom:0;z-index:150;
+    background:var(--pm-bg-e);
+    border-radius:16px 16px 0 0;
+    box-shadow:0 -8px 40px rgba(0,0,0,.6);
+    padding:8px 0 max(8px, env(safe-area-inset-bottom));
+    display:flex;flex-direction:column;
+    transform:translateY(100%);
+    transition:transform .25s ease;
+  }
+  .pm-mobile-tools-sheet.pm-mobile-drawer-open{transform:translateY(0)}
+  .pm-mobile-tools-grip{width:36px;height:4px;border-radius:2px;background:var(--pm-border);margin:8px auto 4px}
+  .pm-mobile-tools-item{
+    padding:14px 20px;text-align:left;background:none;border:none;
+    border-bottom:1px solid var(--pm-border);
+    color:var(--pm-tx);font-size:15px;
+  }
+  .pm-mobile-tools-item:last-child{border-bottom:none}
+  .pm-mobile-tools-item:disabled{opacity:.4}
+  .pm-mobile-tools-item.active{color:var(--pm-ac)}
+
+  /* .pm-block-actions (per-row edit/delete icons) are hover-revealed on desktop
+     (.pm-block-item:hover .pm-block-actions{opacity:1} above) — touch has no hover state, so
+     without this override these buttons are invisible and undiscoverable on mobile. Same for
+     .pm-drag-handle, which fades in on hover for the same reason — it also now doubles as the
+     ONLY touch drag-initiation target (see useDragReorder.ts / BlockSidebar.vue's
+     onItemMouseDown), so it needs to be both visible and comfortably sized, not just
+     discoverable. */
+  .pm-block-actions{opacity:.85 !important}
+  .pm-drag-handle{
+    opacity:.85 !important;
+    touch-action:none; /* stop the browser reading a handle-drag as a page/list scroll */
+    padding:8px 6px; margin:-8px -6px; /* grow the tap target without shifting layout */
+  }
+
+  /* Touch targets: desktop-sized icon buttons (20x20 / 22x22 / 24x24px) are undersized for a
+     finger (~40px is the commonly cited comfortable minimum). Rather than resizing the icons
+     themselves (which would look oversized relative to surrounding text), grow the tappable
+     area with padding and center the icon inside it via flex, so visual size is unchanged. */
+  .pm-block-act,.vp-btn,.pb-toggle,.pm-group-toggle{
+    width:36px;height:36px;
+  }
+  .pm-toggle-sw{width:38px;height:20px}
+  .pm-toggle-sw::after{width:16px;height:16px}
+  .pm-toggle-sw.on::after{transform:translateX(18px)}
+  .pm-tab{height:40px}
+  .icon-btn{padding:8px 10px}
+
+  /* Modals: desktop's centered fixed-width dialog (min-width:360px) can overflow a narrow
+     phone screen. Let it use most of the viewport width instead, and drop the height cap that
+     assumed a keyboard-free desktop viewport. */
+  .pm-modal{min-width:0;width:92vw;max-height:80vh}
+  .pm-modal.lg,.pm-modal.sm{min-width:0;max-width:92vw}
+  .pm-cp-modal{width:96vw;height:88vh;max-height:88vh}
+  .pm-cp-body{flex-direction:column}
+
+  /* Safe-area insets for notched phones and bottom nav bars */
+  .pm-header{padding-top:max(6px, env(safe-area-inset-top))}
+  .pm-sidebar{padding-bottom:env(safe-area-inset-bottom)}
+  .pm-block-list{padding-bottom:calc(3px + env(safe-area-inset-bottom))}
+  .pm-fab{bottom:calc(16px + env(safe-area-inset-bottom));right:calc(16px + env(safe-area-inset-right))}
+  .pm-right-panel,
+  .pm-preview-panel{padding-bottom:env(safe-area-inset-bottom)}
+
+  /* Sidebar tools: allow wrap so Bind/Unbind don't overflow */
+  .pm-sidebar-tools{flex-wrap:wrap;gap:4px}
+  .pm-sidebar-tools .pm-btn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  /* Tighten block rows so name+role+actions fit */
+  .pm-block-item{gap:4px;padding:6px 4px}
+  .pm-block-name{font-size:13px}
+  .pm-block-role{font-size:10px;padding:0 3px;letter-spacing:0}
+
+  /* Editor meta row: don't wrap, let name ellipsis */
+  .pm-editor-meta{flex-wrap:nowrap;gap:8px;padding:8px 12px}
+  .pm-rce-name{min-width:0}
+
+  .pm-fab{bottom:calc(16px + env(safe-area-inset-bottom));right:calc(16px + env(safe-area-inset-right))}
+}

@@ -48,6 +48,13 @@ export default {
   'shared.header.mode.block': '预设',
   'shared.header.mode.regex': '正则',
 
+  // Mobile-only header controls (App.vue) — ☰ opens the sidebar as a left drawer, ⋯ opens the
+  // tools action sheet. Everything the action sheet lists reuses the existing shared.header.*
+  // labels above (mode.block/mode.regex/reload/copyBlocks/search/settings/varNav/preview/
+  // newPreset/deletePreset), so only these two container labels are new.
+  'shared.mobile.sidebar': '侧边栏',
+  'shared.mobile.tools': '更多工具',
+
   // ---- shared.settings：设置弹窗 ----
   'shared.settings.title': '编辑器设置',
   'shared.settings.language': '界面语言',

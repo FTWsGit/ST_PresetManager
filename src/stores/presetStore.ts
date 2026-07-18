@@ -65,6 +65,30 @@ export const usePresetStore = defineStore('main', () => {
     return flatNodes.value.findIndex(n => !n.isGroup && (n.ref as OrderItem).identifier === identifier)
   }
 
+  /**
+   * Opens/focuses the editor tab for block `gi`, mirroring exactly what BlockSidebar.vue's own
+   * onItemClick already does on a plain click (tabsStore.open with the block's name as label).
+   *
+   * Why this exists as its own function: selectBlock(gi) only ever updates selIdx/selectedGi (the
+   * sidebar's "which row is highlighted" state) — it does NOT touch tabsStore.activeTab, and
+   * EditorShell.vue renders its "select a block to edit" placeholder purely off
+   * `!tabsStore.activeTab` (see EditorShell.vue), not off selIdx. Search/var-nav "jump to" actions
+   * were calling selectBlock(gi) and stopping there, which is fine when the user already has some
+   * block tab open (selIdx changing was enough to visually re-highlight the row, and the editor
+   * already had *a* tab active) — but if no tab had been opened yet at all (e.g. the very first
+   * thing the user does after loading a preset is search or jump via var-nav, without first
+   * clicking a block in the sidebar), tabsStore.activeTab stayed null and the editor kept showing
+   * the placeholder no matter how "jumping" the jump felt from the sidebar's point of view. This
+   * is what jumpToSearchResult/jumpToVarOp/jumpToPopupVar call in addition to selectBlock.
+   */
+  function openTabForGi(gi: number) {
+    const node = flatNodes.value[gi]
+    if (!node || node.isGroup) return
+    const item = node.ref as OrderItem
+    const block = prompts.value.find(p => p.identifier === item.identifier)
+    tabsStore.open({ domain: 'block', key: item.identifier, label: block?.name || item.identifier })
+  }
+
   /* ====== UI State ====== */
   const panelOpen = ref(false)
   // Settings (font/colors/panel widths) + toast notifications — extracted to useUiState() since
@@ -381,10 +405,15 @@ export const usePresetStore = defineStore('main', () => {
     )
     selectedGi.value = next.selected
     anchorGi.value = next.anchor ?? -1
-    // selIdx tracks the "focused" row for the editor pane, which isn't simply "whatever ended up
-    // selected" — a ctrl-click always focuses the row it clicked even when the click just
-    // deselected it (so the editor doesn't jump away), matching the original per-branch behavior.
-    selIdx.value = hasCtrl ? gi : (next.selected.has(gi) ? gi : -1)
+    // selIdx tracks the "focused" row for the editor pane. On a plain click it follows the
+    // selection; on ctrl-click it stays on the clicked row if it was newly selected, otherwise
+    // falls back to another selected row (or -1 if nothing remains) so the sidebar highlight
+    // and editor content stay in sync with the actual selection.
+    if (hasCtrl) {
+      selIdx.value = next.selected.has(gi) ? gi : (next.selected.size > 0 ? Array.from(next.selected).pop()! : -1)
+    } else {
+      selIdx.value = next.selected.has(gi) ? gi : -1
+    }
     tabsStore.requestListScroll('block')
   }
   function addBlock() {
@@ -605,6 +634,7 @@ export const usePresetStore = defineStore('main', () => {
     const gi = revealAndFindGi(r.blockId)
     if (gi >= 0 && gi !== selIdx.value) selectBlock(gi)
     else if (gi >= 0) tabsStore.requestListScroll('block')
+    if (gi >= 0) openTabForGi(gi)
     requestEditorJump(r.line, r.col, r.ml, false)
   }
   function navSearch(dir: number) {
@@ -691,6 +721,7 @@ export const usePresetStore = defineStore('main', () => {
     const gi = revealAndFindGi(v.blockId)
     if (gi >= 0 && gi !== selIdx.value) selectBlock(gi)
     else if (gi >= 0) tabsStore.requestListScroll('block')
+    if (gi >= 0) openTabForGi(gi)
     requestEditorJump(v.line, v.col, v.varName.length)
   }
   function navVar(dir: number) {
@@ -759,6 +790,7 @@ export const usePresetStore = defineStore('main', () => {
     const gi = revealAndFindGi(v.blockId)
     if (gi >= 0 && gi !== selIdx.value) selectBlock(gi)
     else if (gi >= 0) tabsStore.requestListScroll('block')
+    if (gi >= 0) openTabForGi(gi)
     requestEditorJump(v.line, v.col, v.varName.length)
   }
   function navPopupVar(dir: number) {

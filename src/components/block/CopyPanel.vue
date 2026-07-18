@@ -33,8 +33,8 @@
         </div>
 
         <div class="pm-cp-mid">
-          <button class="pm-btn accent" :disabled="!sides.left.sel.size || !sides.right.data" :title="store.t('block.copyPanel.copyRight')" @click="copy('left')">▶</button>
-          <button class="pm-btn accent" :disabled="!sides.right.sel.size || !sides.left.data" :title="store.t('block.copyPanel.copyLeft')" @click="copy('right')">◀</button>
+          <button class="pm-btn accent" :disabled="!sides.left.sel.size || !sides.right.data" :title="store.t('block.copyPanel.copyRight')" @click="copy('left')">{{ isMobile ? '▼' : '▶' }}</button>
+          <button class="pm-btn accent" :disabled="!sides.right.sel.size || !sides.left.data" :title="store.t('block.copyPanel.copyLeft')" @click="copy('right')">{{ isMobile ? '▲' : '◀' }}</button>
         </div>
 
         <div class="pm-cp-col">
@@ -77,6 +77,7 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { usePresetStore } from '../../stores/presetStore'
 import { useConfirmStore } from '../../stores/confirmStore'
+import { useIsMobile } from '../../composables/hostEnv'
 import * as ST from '../../sillytavern'
 import type { PresetListEntry } from '../../sillytavern'
 import type { PresetData, PresetBlock, OrderItem } from '../../types'
@@ -84,6 +85,7 @@ import { applyMultiSelect, roleClass, esc, orderedPromptsWithHidden } from '../.
 
 const store = usePresetStore()
 const confirmStore = useConfirmStore()
+const isMobile = useIsMobile()
 
 const presetOptions = ref<PresetListEntry[]>([])
 

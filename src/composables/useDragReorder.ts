@@ -32,12 +32,31 @@ export function useDragReorder() {
       }
     }
   }
-  function onItemMouseDown(i: number, e: MouseEvent, onDrop: (from: number, to: number, after: boolean) => void) {
-    if (e.button !== 0) return
+  /**
+   * Uses Pointer Events rather than mouse events, so this also works when `i` is dragged via
+   * touch on mobile — see usePanelResize.ts's doc comment for the same reasoning (one pointer
+   * event triplet covers mouse/touch/pen uniformly).
+   *
+   * TOUCH vs SCROLL: touch drags are gated to the .pm-drag-handle element specifically — see
+   * BlockSidebar.vue's onItemMouseDown for the full reasoning (short version: letting touch-drag
+   * start anywhere on the row means it fights the browser's native scroll for the same gesture,
+   * since a real scroll swipe also crosses DRAG_THRESHOLD almost immediately; requiring a small
+   * dedicated handle, with `touch-action: none` set on JUST that handle in main.css, is the
+   * standard fix). Mouse users keep whole-row dragging since a mouse drag never competes with a
+   * scroll gesture in the first place.
+   */
+  function onItemMouseDown(i: number, e: PointerEvent, onDrop: (from: number, to: number, after: boolean) => void) {
+    if (e.pointerType === 'mouse') {
+      if (e.button !== 0) return
+    } else if (!(e.target as HTMLElement).closest('.pm-drag-handle')) {
+      return
+    }
     const hostWin = getHostWindow()
     const startX = e.clientX, startY = e.clientY
+    const pointerId = e.pointerId
     let dragging = false
-    function onMove(ev: MouseEvent) {
+    function onMove(ev: PointerEvent) {
+      if (ev.pointerId !== pointerId) return
       if (!dragging) {
         if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD && Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return
         dragging = true
@@ -45,9 +64,11 @@ export function useDragReorder() {
       }
       updateDragOver(ev.clientY)
     }
-    function onUp() {
-      hostWin.removeEventListener('mousemove', onMove)
-      hostWin.removeEventListener('mouseup', onUp)
+    function onUp(ev: PointerEvent) {
+      if (ev.pointerId !== pointerId) return
+      hostWin.removeEventListener('pointermove', onMove)
+      hostWin.removeEventListener('pointerup', onUp)
+      hostWin.removeEventListener('pointercancel', onUp)
       if (dragging) {
         suppressClick = true
         if (dragOverIdx.value >= 0 && dragOverIdx.value !== i) onDrop(i, dragOverIdx.value, dragOverPos.value === 'bottom')
@@ -55,8 +76,9 @@ export function useDragReorder() {
       dragIdx.value = null
       dragOverIdx.value = -1
     }
-    hostWin.addEventListener('mousemove', onMove)
-    hostWin.addEventListener('mouseup', onUp)
+    hostWin.addEventListener('pointermove', onMove)
+    hostWin.addEventListener('pointerup', onUp)
+    hostWin.addEventListener('pointercancel', onUp)
   }
   function consumeSuppressClick(): boolean {
     if (suppressClick) { suppressClick = false; return true }

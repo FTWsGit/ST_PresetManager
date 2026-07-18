@@ -1,5 +1,5 @@
 <template>
-  <aside class="pm-sidebar" ref="sidebarRef" :style="{ width: store.settings.sidebarWidth + 'px' }">
+  <aside class="pm-sidebar" ref="sidebarRef" :class="{ 'pm-mobile-drawer-open': props.mobileDrawerOpen }" :style="{ width: store.settings.sidebarWidth + 'px' }">
     <div class="pm-sidebar-header">
       <span>{{ store.t('block.sidebar.title', { count: store.order.length }) }}</span>
       <ListToolbar :count="store.prompts.length">
@@ -19,7 +19,7 @@
              class="pm-group-header"
              :class="{ selected: store.selectedGi.has(gi) || store.selIdx === gi, disabled: !(node.ref as OrderGroup).enabled, 'drag-over-top': dragOverIdx === gi && dragOverPos === 'top', 'drag-over-bottom': dragOverIdx === gi && dragOverPos === 'bottom' }"
              :style="itemStyle(node)"
-             @mousedown="onItemMouseDown(gi, $event)"
+             @pointerdown="onItemMouseDown(gi, $event)"
              @click="onItemClick(gi, $event)">
           <span class="pm-group-toggle" :class="{ collapsed: (node.ref as OrderGroup).collapsed }" @click.stop="onGroupToggle(gi)">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M4 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -33,7 +33,7 @@
                  @keydown.enter.prevent="finishEditGroupName(gi, $event)"
                  @keydown.esc.prevent="cancelEditGroupName()"
                  @click.stop
-                 @mousedown.stop />
+                 @pointerdown.stop />
           <span class="pm-group-count">{{ (node.ref as OrderGroup).children.length }}</span>
           <span class="pm-block-actions">
             <span class="pm-block-act" @click.stop="store.toggleBlock(gi)">👁</span>
@@ -46,7 +46,7 @@
              class="pm-block-item"
              :class="{ selected: store.selectedGi.has(gi) || store.selIdx === gi, disabled: !(node.ref as OrderItem).enabled, dragging: dragIdx === gi, 'drag-over-top': dragOverIdx === gi && dragOverPos === 'top', 'drag-over-bottom': dragOverIdx === gi && dragOverPos === 'bottom', nested: node.depth > 0 }"
              :style="itemStyle(node)"
-             @mousedown="onItemMouseDown(gi, $event)"
+             @pointerdown="onItemMouseDown(gi, $event)"
              @click="onItemClick(gi, $event)">
           <span class="pm-drag-handle">⠿</span>
           <span class="pm-toggle-sw" :class="{ on: (node.ref as OrderItem).enabled }" @click.stop="store.toggleBlock(gi)"></span>
@@ -61,7 +61,7 @@
                  @keydown.enter.prevent="finishEditBlockName(gi, $event)"
                  @keydown.esc.prevent="cancelEditBlockName()"
                  @click.stop
-                 @mousedown.stop />
+                 @pointerdown.stop />
           <span class="pm-block-role" :class="roleClass((node.ref as OrderItem).identifier)">{{ getBlock((node.ref as OrderItem).identifier)?.role || 'system' }}</span>
           <span class="pm-block-actions">
             <span class="pm-block-act" @click.stop="store.hideBlock(gi)">👁</span>
@@ -71,7 +71,7 @@
       </template>
     </div>
   </aside>
-  <div class="pm-resize-handle" :class="{ active: resize.active.value }" @mousedown="onResizeStart"></div>
+  <div class="pm-resize-handle" :class="{ active: resize.active.value }" @pointerdown="onResizeStart"></div>
 </template>
 
 <script setup lang="ts">
@@ -83,6 +83,15 @@ import { getHostDocument, getHostWindow } from '../../composables/hostEnv'
 import { roleClass as roleClassOf } from '../../utils'
 import { useTabsStore } from '../../stores/tabsStore'
 import ListToolbar from '../shared/ListToolbar.vue'
+
+// Explicit prop rather than relying on Vue's automatic class/attr fallthrough from the parent:
+// this component's <template> has TWO root nodes (<aside> + the sibling .pm-resize-handle div,
+// see the very end of the template) — Vue only auto-inherits a parent's :class/attrs onto a
+// component's root when there's exactly ONE root; for multi-root ("fragment") components it's
+// simply dropped, silently, with no warning in this case since :class specifically is what's
+// affected. App.vue passing :class="{ 'pm-mobile-drawer-open': ... }" on <BlockSidebar /> would
+// never have reached the <aside> either way — hence this prop, bound directly on <aside> below.
+const props = defineProps<{ mobileDrawerOpen?: boolean }>()
 
 const tabsStore = useTabsStore()
 const store = usePresetStore()
@@ -210,7 +219,7 @@ const resize = usePanelResize({
   setWidth: (w) => { store.settings.sidebarWidth = w },
   min: 220, max: 600, dir: 'right',
 })
-function onResizeStart(e: MouseEvent) { resize.onMouseDown(e) }
+function onResizeStart(e: PointerEvent) { resize.onPointerDown(e) }
 watch(() => resize.active.value, (v) => { if (!v) store.saveSettings() })
 
 /* ---- Scroll selected item into view on jump requests ----
@@ -299,19 +308,93 @@ function handleListAutoScroll(clientY: number) {
 function startDragScroll(s: number) { if (!dragScrollRAF) (function t() { if (listRef.value) listRef.value.scrollTop += s; dragScrollRAF = requestAnimationFrame(t) })() }
 function stopDragScroll() { if (dragScrollRAF) { cancelAnimationFrame(dragScrollRAF); dragScrollRAF = null } }
 
-// Mouse events during the drag happen over the TOP document (see hostEnv.ts), so listeners
+// Pointer events during the drag happen over the TOP document (see hostEnv.ts), so listeners
 // must go on the host window, exactly like usePanelResize does for panel resizing.
+//
+// Uses Pointer Events rather than mouse events so this also works via touch on mobile — see
+// usePanelResize.ts's doc comment for the general reasoning.
+//
+// TOUCH vs SCROLL: an earlier version let touch-drag start anywhere on the row, on the theory
+// that DRAG_THRESHOLD alone would tell an intentional drag apart from an ordinary scroll swipe.
+// In practice it didn't — a real vertical scroll gesture also moves more than DRAG_THRESHOLD's
+// 4px within the first couple of touch samples, so almost every scroll got misread as "starting
+// a drag" before the browser's own native scroll had a chance to take over, and the two fought
+// over the same touch (this is a known conflict — see e.g. gitlab-org/gitlab#16048, motion's
+// reorder-vs-scroll issue #1341). The fix used everywhere for sortable touch lists is to require
+// touch drags to start from a small dedicated handle rather than the whole row: mouse users keep
+// the desktop convenience of dragging from anywhere on the row (a mouse drag never competes with
+// a scroll gesture, so there's nothing to disambiguate), but a touch/pen pointerdown only starts
+// a drag if it actually landed on .pm-drag-handle — anywhere else on the row is left completely
+// alone, so the browser's native scroll handles it with zero interference. .pm-drag-handle gets
+// `touch-action: none` in main.css so a touch that DOES land there is never also read as "start
+// scrolling", but nothing outside the handle is touch-action-restricted, so normal list scrolling
+// is untouched everywhere else in the row.
 const DRAG_THRESHOLD = 4
+const LONG_PRESS_MS = 200
 let suppressClick = false
+let longPressTimer: ReturnType<typeof setTimeout> | null = null
 
-function onItemMouseDown(i: number, e: MouseEvent) {
-  if (e.button !== 0) return
+function cancelLongPress() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
+}
+
+function onItemMouseDown(i: number, e: PointerEvent) {
   const hostWin = getHostWindow()
+
+  if (e.pointerType === 'mouse') {
+    if (e.button !== 0) return
+  } else if (!(e.target as HTMLElement).closest('.pm-drag-handle')) {
+    // touch/pen off the handle — long-press to multi-select, scroll otherwise.
+    // We don't start a drag here (the browser's native scroll should win), but we DO
+    // watch for a hold: if the finger stays within DRAG_THRESHOLD for LONG_PRESS_MS,
+    // we treat it as a Ctrl+Click toggle (multi-select). Moving past the threshold
+    // cancels the timer and lets the browser handle it as a normal scroll gesture.
+    const startX = e.clientX
+    const startY = e.clientY
+    const pointerId = e.pointerId
+
+    function onMove(ev: PointerEvent) {
+      if (ev.pointerId !== pointerId) return
+      if (Math.abs(ev.clientX - startX) > DRAG_THRESHOLD || Math.abs(ev.clientY - startY) > DRAG_THRESHOLD) {
+        cancelLongPress()
+        hostWin.removeEventListener('pointermove', onMove)
+        hostWin.removeEventListener('pointerup', onUp)
+        hostWin.removeEventListener('pointercancel', onUp)
+      }
+    }
+
+    function onUp(ev: PointerEvent) {
+      if (ev.pointerId !== pointerId) return
+      cancelLongPress()
+      hostWin.removeEventListener('pointermove', onMove)
+      hostWin.removeEventListener('pointerup', onUp)
+      hostWin.removeEventListener('pointercancel', onUp)
+    }
+
+    hostWin.addEventListener('pointermove', onMove)
+    hostWin.addEventListener('pointerup', onUp)
+    hostWin.addEventListener('pointercancel', onUp)
+
+    longPressTimer = setTimeout(() => {
+      longPressTimer = null
+      store.selectBlock(i, { ctrl: true })
+      if (navigator.vibrate) navigator.vibrate(40)
+      suppressClick = true
+    }, LONG_PRESS_MS)
+    return
+  }
+
+  // Mouse, or touch/pen that landed on the drag handle — start tracking a drag.
   const startX = e.clientX
   const startY = e.clientY
+  const pointerId = e.pointerId
   let dragging = false
 
-  function onMove(ev: MouseEvent) {
+  function onMove(ev: PointerEvent) {
+    if (ev.pointerId !== pointerId) return
     if (!dragging) {
       if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD && Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return
       dragging = true
@@ -322,13 +405,15 @@ function onItemMouseDown(i: number, e: MouseEvent) {
     handleListAutoScroll(ev.clientY)
   }
 
-  function onUp() {
-    hostWin.removeEventListener('mousemove', onMove)
-    hostWin.removeEventListener('mouseup', onUp)
+  function onUp(ev: PointerEvent) {
+    if (ev.pointerId !== pointerId) return
+    hostWin.removeEventListener('pointermove', onMove)
+    hostWin.removeEventListener('pointerup', onUp)
+    hostWin.removeEventListener('pointercancel', onUp)
     restoreSelection()
     stopDragScroll()
     if (dragging) {
-      // A real drag happened — the browser will still fire a native `click` on mouseup at the
+      // A real drag happened — the browser will still fire a native `click` on pointerup at the
       // same target even though the pointer moved, so swallow that one click via onItemClick.
       suppressClick = true
       const from = dragIdx.value
@@ -342,8 +427,9 @@ function onItemMouseDown(i: number, e: MouseEvent) {
     pendingOver = null
   }
 
-  hostWin.addEventListener('mousemove', onMove)
-  hostWin.addEventListener('mouseup', onUp)
+  hostWin.addEventListener('pointermove', onMove)
+  hostWin.addEventListener('pointerup', onUp)
+  hostWin.addEventListener('pointercancel', onUp)
 }
 
 function onItemClick(gi: number, e: MouseEvent) {

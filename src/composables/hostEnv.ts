@@ -16,6 +16,8 @@
 // Everywhere in this app that needs the "real" window/document should go through these
 // helpers instead of using the bare globals.
 
+import { ref, onUnmounted, type Ref } from 'vue'
+
 let cachedWin: Window | null = null
 
 export function getHostWindow(): Window {
@@ -75,3 +77,45 @@ export async function copyToHostClipboard(text: string): Promise<boolean> {
     return false
   }
 }
+
+/** Below this width the 4-column layout (sidebar/editor/varPanel/preview side-by-side) can't
+ *  fit — see main.css's off-canvas drawer / bottom-sheet layout and App.vue's
+ *  mobileDrawerVisible state. Picked to sit just above typical phone widths in both
+ *  orientations (390-430px portrait) while still kicking in for the narrow in-app browser
+ *  viewports SillyTavern is commonly embedded in. */
+export const MOBILE_BREAKPOINT = 720
+
+/**
+ * Reactive `isMobile` flag, true when the viewport is narrow enough that the desktop multi-panel
+ * layout has to collapse to one panel at a time (see main.css's @media (max-width) rules, which
+ * use this same breakpoint).
+ *
+ * Reads/listens on the HOST window, not the bare global — same reasoning as
+ * usePanelResize.ts's mouse listeners: this app's own iframe (see the file-level comment above)
+ * is never resized by the user, so a `resize` listener or `matchMedia` query against the bare
+ * `window` would silently never fire. The real viewport the user sees is the host window's.
+ */
+export function useIsMobile(): Ref<boolean> {
+  const hostWin = getHostWindow()
+  const isMobile = ref(hostWin.innerWidth <= MOBILE_BREAKPOINT)
+
+  function update() { isMobile.value = hostWin.innerWidth <= MOBILE_BREAKPOINT }
+
+  // Prefer matchMedia (fires on the actual breakpoint crossing, cheaper than a resize listener
+  // recomputing on every pixel), fall back to 'resize' if matchMedia is unavailable for some
+  // reason on the host window. Every host environment this app actually runs in (SillyTavern's
+  // browser tab, TauriTavern's WebView2, mobile in-app browsers) is modern enough to have
+  // MediaQueryList.addEventListener, so no legacy addListener() shim is needed here.
+  if (hostWin.matchMedia) {
+    const mql = hostWin.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`)
+    const onChange = () => update()
+    mql.addEventListener('change', onChange)
+    onUnmounted(() => mql.removeEventListener('change', onChange))
+  } else {
+    hostWin.addEventListener('resize', update)
+    onUnmounted(() => hostWin.removeEventListener('resize', update))
+  }
+
+  return isMobile
+}
+

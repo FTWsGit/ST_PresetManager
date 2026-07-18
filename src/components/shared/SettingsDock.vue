@@ -1,6 +1,6 @@
 <template>
   <div v-if="formComponent && tabsStore.settingsDockOpen" class="pm-right-panel pm-settings-dock" :class="{ float: store.settings.settingsDockFloat }" :style="{ width: store.settings.settingsDockWidth + 'px' }">
-    <div class="pm-right-resize-handle" :class="{ active: resize.active.value }" @mousedown="resize.onMouseDown"></div>
+    <div class="pm-right-resize-handle" :class="{ active: resize.active.value }" @pointerdown="resize.onPointerDown"></div>
     <div class="pm-rp-header">
       <span>{{ store.t('shared.settingsDock.title') }}</span>
       <div class="pm-row-tight">

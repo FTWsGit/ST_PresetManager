@@ -1,5 +1,5 @@
 <template>
-  <aside class="pm-sidebar" :style="{ width: store.settings.sidebarWidth + 'px' }">
+  <aside class="pm-sidebar" :class="{ 'pm-mobile-drawer-open': props.mobileDrawerOpen }" :style="{ width: store.settings.sidebarWidth + 'px' }">
     <div class="pm-sidebar-header">
       <span>{{ store.t('regex.sidebar.title', { count: store.regexScripts.length }) }}</span>
       <ListToolbar :count="store.regexScripts.length">
@@ -14,7 +14,7 @@
            :class="{ selected: tabsStore.activeId === 'regex:' + r.id, disabled: r.disabled, dragging: dragIdx === i,
                      'drag-over-top': dragOverIdx === i && dragOverPos === 'top',
                      'drag-over-bottom': dragOverIdx === i && dragOverPos === 'bottom' }"
-           @mousedown="onDragStart(i, $event)"
+           @pointerdown="onDragStart(i, $event)"
            @click="onItemClick(i)">
         <span class="pm-drag-handle">⠿</span>
         <span class="pm-toggle-sw" :class="{ on: !r.disabled }" :title="store.t('regex.sidebar.toggleTitle')" @click.stop="r.disabled = !r.disabled"></span>
@@ -25,7 +25,7 @@
       </div>
     </div>
   </aside>
-  <div class="pm-resize-handle" :class="{ active: resize.active.value }" @mousedown="resize.onMouseDown"></div>
+  <div class="pm-resize-handle" :class="{ active: resize.active.value }" @pointerdown="resize.onPointerDown"></div>
 </template>
 
 <script setup lang="ts">
@@ -38,6 +38,11 @@ import type { RegexScript } from '../../types'
 import { useConfirmStore } from '../../stores/confirmStore'
 import { esc } from '../../utils'
 import ListToolbar from '../shared/ListToolbar.vue'
+
+// See BlockSidebar.vue's identical prop for why: this template also has two root nodes
+// (<aside> + the sibling .pm-resize-handle div at the end), so a parent's :class doesn't
+// automatically reach <aside> the way it would for a single-root component.
+const props = defineProps<{ mobileDrawerOpen?: boolean }>()
 
 const confirmStore = useConfirmStore()
 const store = usePresetStore()
@@ -66,7 +71,7 @@ function onItemClick(i: number) {
   const r = store.regexScripts[i]
   if (r) tabsStore.open({ domain: 'regex', key: r.id, label: r.scriptName || store.t('common.unnamed') })
 }
-function onDragStart(i: number, e: MouseEvent) {
+function onDragStart(i: number, e: PointerEvent) {
   onItemMouseDown(i, e, (from, to, after) => store.reorderRegexScript(from, to, after))
 }
 
