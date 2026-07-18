@@ -27,8 +27,13 @@
 .st-pm ::-webkit-scrollbar-thumb:hover{background:#3a3c4e}
 
 /* FAB */
-.pm-fab{position:absolute;bottom:24px;right:24px;width:48px;height:48px;border-radius:50%;background:var(--pm-bg-e)!important;border:1px solid rgba(200,149,74,.4)!important;color:var(--pm-ac);font-size:15px;font-weight:700;cursor:pointer;z-index:9999;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(0,0,0,.5);transition:all .2s;pointer-events:auto!important}
+.pm-fab{position:absolute;bottom:24px;right:24px;width:48px;height:48px;border-radius:50%;background:var(--pm-bg-e)!important;border:1px solid rgba(200,149,74,.4)!important;color:var(--pm-ac);font-size:15px;font-weight:700;cursor:pointer;z-index:9999;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(0,0,0,.5);transition:all .2s;pointer-events:auto!important;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 .pm-fab:hover{transform:scale(1.1);box-shadow:0 0 24px rgba(200,149,74,.3)}
+/* While the long-press-drag is active (see App.vue's onFabPointerDown): no transition (it would
+   lag a whole frame behind the pointer), a "grabbing" cursor, and a slightly stronger shadow/scale
+   so there's an unambiguous visual "you're moving this now" cue distinct from the plain :hover
+   state above. */
+.pm-fab.dragging{transition:none;cursor:grabbing;box-shadow:0 6px 28px rgba(0,0,0,.6);transform:scale(1.08)}
 
 /* Panel (fullscreen overlay) */
 .pm-panel{position:absolute;inset:0;z-index:100000;display:flex;flex-direction:column;background:var(--pm-bg);color:var(--pm-tx);font-family:var(--pm-fm);overflow:hidden;pointer-events:auto}

@@ -1,7 +1,8 @@
 <template>
   <div class="st-pm" :style="store.cssVars">
     <Transition name="pm-fab">
-      <button v-if="!store.panelOpen" class="pm-fab" @click="openPanel">PM</button>
+      <button v-if="!store.panelOpen" class="pm-fab" :class="{ dragging: fabDragging }"
+              :style="fabStyle" @pointerdown="onFabPointerDown" @click="onFabClick">PM</button>
     </Transition>
 
     <Transition name="pm-panel">
@@ -114,8 +115,8 @@ import SettingsDock from './components/shared/SettingsDock.vue'
 import { useTabsStore } from './stores/tabsStore'
 import { useConfirmStore } from './stores/confirmStore'
 import { esc } from './utils'
-import { ref, watch } from 'vue'
-import { useIsMobile } from './composables/hostEnv'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useIsMobile, getHostWindow } from './composables/hostEnv'
 
 const confirmStore = useConfirmStore()
 const tabsStore = useTabsStore()
@@ -194,6 +195,119 @@ watch(() => tabsStore.activeId, () => {
 watch(() => store.editorJump, () => {
   if (isMobile.value) mobileDrawerVisible.value = 'none'
 })
+
+// FAB long-press-to-move. Mirrors the long-press pattern in BlockSidebar.vue's
+// onItemMouseDown (same LONG_PRESS_MS/DRAG_THRESHOLD) and the "draft during drag, commit once on
+// release" rule used everywhere else a drag ends up in `settings` (see usePanelResize call sites) —
+// but this one isn't a good fit for either existing composable: useDragReorder is drop-target/list
+// based, and usePanelResize only moves one axis. The FAB is a single free-floating element, so it
+// gets its own small handler here rather than a third composable for one caller.
+//
+// Distinguishing "tap to open" from "long-press to drag" without delaying the tap: a normal
+// pointerdown->pointerup within LONG_PRESS_MS always still fires a plain `click` (we never call
+// preventDefault on pointerdown), so quick taps are exactly as fast as before. Only if the timer
+// actually fires do we flip into drag mode and start suppressing the click that would otherwise
+// follow the pointerup.
+const FAB_SIZE = 48 // keep in sync with .pm-fab's width/height in main.css
+const FAB_DRAG_THRESHOLD = 4
+const FAB_LONG_PRESS_MS = 100
+const fabDragging = ref(false)
+let fabLongPressTimer: ReturnType<typeof setTimeout> | null = null
+let fabSuppressClick = false
+
+function cancelFabLongPress() {
+  if (fabLongPressTimer) { clearTimeout(fabLongPressTimer); fabLongPressTimer = null }
+}
+
+function clampFabPos(x: number, y: number) {
+  const hostWin = getHostWindow()
+  // Only clamps against the raw viewport box, not env(safe-area-inset-*) — reading a CSS env()
+  // value back out in JS needs an extra getComputedStyle round-trip for marginal benefit here.
+  // The CSS default position (bottom/right, see .pm-fab) still honors the safe-area media query;
+  // this only applies once the user has actually dragged the FAB somewhere themselves.
+  const maxX = Math.max(0, hostWin.innerWidth - FAB_SIZE)
+  const maxY = Math.max(0, hostWin.innerHeight - FAB_SIZE)
+  return { x: Math.min(Math.max(0, x), maxX), y: Math.min(Math.max(0, y), maxY) }
+}
+
+const fabStyle = computed(() => {
+  const pos = store.settings.fabPos
+  if (!pos) return undefined
+  return { left: pos.x + 'px', top: pos.y + 'px', right: 'auto', bottom: 'auto' }
+})
+
+function onFabPointerDown(e: PointerEvent) {
+  if (e.pointerType === 'mouse' && e.button !== 0) return
+  const hostWin = getHostWindow()
+  const fabEl = e.currentTarget as HTMLElement
+  const startX = e.clientX, startY = e.clientY
+  const pointerId = e.pointerId
+  let dragging = false
+
+  function onMove(ev: PointerEvent) {
+    if (ev.pointerId !== pointerId) return
+    if (!dragging) {
+      // Moved before the long-press fired — not a drag start, let the pending timer keep
+      // running only while the pointer is still basically still; once it's moved past the
+      // threshold this was never a long-press to begin with (e.g. an accidental drag-ish
+      // gesture), so cancel and leave it as a would-be plain click.
+      if (Math.abs(ev.clientX - startX) < FAB_DRAG_THRESHOLD && Math.abs(ev.clientY - startY) < FAB_DRAG_THRESHOLD) return
+      cancelFabLongPress()
+      return
+    }
+    const { x, y } = clampFabPos(ev.clientX - FAB_SIZE / 2, ev.clientY - FAB_SIZE / 2)
+    store.settings.fabPos = { x, y } // draft only — not persisted to localStorage until release
+  }
+  function onUp(ev: PointerEvent) {
+    if (ev.pointerId !== pointerId) return
+    cancelFabLongPress()
+    hostWin.removeEventListener('pointermove', onMove)
+    hostWin.removeEventListener('pointerup', onUp)
+    hostWin.removeEventListener('pointercancel', onUp)
+    if (dragging) {
+      fabDragging.value = false
+      store.saveSettings() // commit once, on release — same rule as panel-resize/color-picker settings
+    }
+  }
+  hostWin.addEventListener('pointermove', onMove)
+  hostWin.addEventListener('pointerup', onUp)
+  hostWin.addEventListener('pointercancel', onUp)
+
+  fabLongPressTimer = setTimeout(() => {
+    fabLongPressTimer = null
+    dragging = true
+    fabDragging.value = true
+    fabSuppressClick = true
+    if (hostWin.navigator?.vibrate) hostWin.navigator.vibrate(40)
+    // Freeze the FAB's current rendered box (still on the default bottom/right anchor the first
+    // time this runs) into an explicit left/top so it can then follow the pointer freely.
+    const r = fabEl.getBoundingClientRect()
+    store.settings.fabPos = clampFabPos(r.left, r.top)
+  }, FAB_LONG_PRESS_MS)
+}
+
+function onFabClick() {
+  if (fabSuppressClick) { fabSuppressClick = false; return }
+  openPanel()
+}
+
+// If a saved position is ever left stranded off-screen (most commonly: rotating a phone, or
+// resizing a desktop browser window narrower after dragging the FAB near an edge), pull it back
+// on the next resize rather than leaving it stuck somewhere unreachable.
+function onHostResize() {
+  const pos = store.settings.fabPos
+  if (!pos) return
+  const clamped = clampFabPos(pos.x, pos.y)
+  if (clamped.x !== pos.x || clamped.y !== pos.y) {
+    store.settings.fabPos = clamped
+    store.saveSettings()
+  }
+}
+onMounted(() => {
+  onHostResize()
+  getHostWindow().addEventListener('resize', onHostResize)
+})
+onUnmounted(() => getHostWindow().removeEventListener('resize', onHostResize))
 
 function openPanel() {
   store.panelOpen = true

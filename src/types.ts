@@ -99,6 +99,11 @@ export interface Settings {
   settingsDockWidth: number
   settingsDockFloat: boolean
   language: 'zh-CN' | 'en'
+  /** FAB's explicit top-left position (px, in viewport coords — see App.vue's onFabPointerDown),
+   *  set the first time the user long-press-drags it. `null` means "use the CSS default"
+   *  (bottom:24px/right:24px, see .pm-fab in main.css), which also stays responsive to the
+   *  mobile safe-area media query — an explicit saved position deliberately overrides that. */
+  fabPos: { x: number; y: number } | null
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -118,6 +123,7 @@ export const DEFAULT_SETTINGS: Settings = {
   settingsDockWidth: 320,
   settingsDockFloat: false,
   language: 'zh-CN',
+  fabPos: null,
 }
 
 /** Cap on how many search-result rows SearchPanel.vue renders in the results list — doSearch()
