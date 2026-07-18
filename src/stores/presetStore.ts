@@ -28,7 +28,6 @@ export const usePresetStore = defineStore('main', () => {
   const order = ref<OrderNode[]>([])
   const selectedGi = ref<Set<number>>(new Set())
   const anchorGi = ref(-1)
-  const selIdx = ref(-1)
   const presetName = ref('')
   const presetList = ref<PresetListEntry[]>([])
 
@@ -65,29 +64,7 @@ export const usePresetStore = defineStore('main', () => {
     return flatNodes.value.findIndex(n => !n.isGroup && (n.ref as OrderItem).identifier === identifier)
   }
 
-  /**
-   * Opens/focuses the editor tab for block `gi`, mirroring exactly what BlockSidebar.vue's own
-   * onItemClick already does on a plain click (tabsStore.open with the block's name as label).
-   *
-   * Why this exists as its own function: selectBlock(gi) only ever updates selIdx/selectedGi (the
-   * sidebar's "which row is highlighted" state) — it does NOT touch tabsStore.activeTab, and
-   * EditorShell.vue renders its "select a block to edit" placeholder purely off
-   * `!tabsStore.activeTab` (see EditorShell.vue), not off selIdx. Search/var-nav "jump to" actions
-   * were calling selectBlock(gi) and stopping there, which is fine when the user already has some
-   * block tab open (selIdx changing was enough to visually re-highlight the row, and the editor
-   * already had *a* tab active) — but if no tab had been opened yet at all (e.g. the very first
-   * thing the user does after loading a preset is search or jump via var-nav, without first
-   * clicking a block in the sidebar), tabsStore.activeTab stayed null and the editor kept showing
-   * the placeholder no matter how "jumping" the jump felt from the sidebar's point of view. This
-   * is what jumpToSearchResult/jumpToVarOp/jumpToPopupVar call in addition to selectBlock.
-   */
-  function openTabForGi(gi: number) {
-    const node = flatNodes.value[gi]
-    if (!node || node.isGroup) return
-    const item = node.ref as OrderItem
-    const block = prompts.value.find(p => p.identifier === item.identifier)
-    tabsStore.open({ domain: 'block', key: item.identifier, label: block?.name || item.identifier })
-  }
+
 
   /* ====== UI State ====== */
   const panelOpen = ref(false)
@@ -188,13 +165,21 @@ export const usePresetStore = defineStore('main', () => {
   }
 
   /* ====== Computed ====== */
+  /**
+   * 当前正在编辑的块，直接从激活的 block 标签的 key 解析，不再依赖 selIdx/flatNodes。
+   * selIdx 现在只用于侧边栏的视觉高亮和滚动定位，不再参与数据查找——见 PROJECT_HANDOFF.md 架构改造。
+   */
   const currentBlock = computed<PresetBlock | null>(() => {
-    if (selIdx.value < 0 || selIdx.value >= flatNodes.value.length) return null
-    const node = flatNodes.value[selIdx.value]
-    if (node.isGroup) return null
-    const item = node.ref as OrderItem
-    return prompts.value.find(p => p.identifier === item.identifier) ?? null
+    const tab = tabsStore.activeTab
+    if (!tab || tab.domain !== 'block') return null
+    return prompts.value.find(p => p.identifier === tab.key) ?? null
   })
+
+  /** 辅助：根据 block identifier 反查它在 flatNodes 里的 gi（视觉下标），用于侧边栏高亮/滚动 */
+  function identifierToGi(identifier: string | null | undefined): number {
+    if (!identifier) return -1
+    return flatNodes.value.findIndex(n => !n.isGroup && (n.ref as OrderItem).identifier === identifier)
+  }
   const hasData = computed(() => rawData.value !== null)
   const hiddenBlocks = computed(() => {
     // Expand groups: a grouped block's identifier lives in group.children, not at the top
@@ -284,7 +269,6 @@ export const usePresetStore = defineStore('main', () => {
       ? po[0].order
       : []
     order.value = importOrderWithGroups(rawOrder)
-    selIdx.value = -1
     selectedGi.value = new Set()
     anchorGi.value = -1
     presetName.value = name
@@ -386,14 +370,13 @@ export const usePresetStore = defineStore('main', () => {
       refreshPresetList()
       const next = presetList.value[0]?.name
       if (next) loadPresetByName(next, { silent: true })
-      else { rawData.value = null as any; presetName.value = ''; selIdx.value = -1 }
+      else { rawData.value = null as any; presetName.value = '' }
       showToast(t('shared.toast.deleted', { name }))
     } catch (e: any) { showToast(t('shared.toast.deleteFailed', { msg: e?.message || e })) }
   }
 
   /* ====== Block Ops ====== */
   function selectBlock(gi: number, opts?: { ctrl?: boolean; shift?: boolean }) {
-    const hasCtrl = opts?.ctrl ?? false
     // Shared ctrl/shift/plain multi-select semantics — see applyMultiSelect's doc comment in
     // utils.ts. `all` is just every valid gi in visual order (0..n-1); for this integer-index
     // case that reduces to the same plain Math.min/max range this used to do inline.
@@ -405,15 +388,6 @@ export const usePresetStore = defineStore('main', () => {
     )
     selectedGi.value = next.selected
     anchorGi.value = next.anchor ?? -1
-    // selIdx tracks the "focused" row for the editor pane. On a plain click it follows the
-    // selection; on ctrl-click it stays on the clicked row if it was newly selected, otherwise
-    // falls back to another selected row (or -1 if nothing remains) so the sidebar highlight
-    // and editor content stay in sync with the actual selection.
-    if (hasCtrl) {
-      selIdx.value = next.selected.has(gi) ? gi : (next.selected.size > 0 ? Array.from(next.selected).pop()! : -1)
-    } else {
-      selIdx.value = next.selected.has(gi) ? gi : -1
-    }
     tabsStore.requestListScroll('block')
   }
   function addBlock() {
@@ -424,27 +398,23 @@ export const usePresetStore = defineStore('main', () => {
       content: '', system_prompt: false, enabled: true, marker: false,
     })
     const item: OrderItem = { identifier: id, enabled: true }
-    if (selIdx.value >= 0) {
-      const node = flatNodes.value[selIdx.value]
+    // 插入位置：当前激活的块后面（如果有），否则追加到末尾
+    const activeId = tabsStore.activeTab?.domain === 'block' ? tabsStore.activeTab.key : null
+    const activeGi = identifierToGi(activeId)
+    if (activeGi >= 0) {
+      const node = flatNodes.value[activeGi]
       if (node) {
         const parent = node.isGroup ? (node.ref as OrderGroup).children : node.parent
         const idx = node.isGroup ? (node.ref as OrderGroup).children.length : node.parentIdx + 1
         parent.splice(idx, 0, item)
-        // 重新计算 gi
-        const newGi = flatNodes.value.findIndex(n => !n.isGroup && (n.ref as OrderItem).identifier === id)
-        if (newGi >= 0) selIdx.value = newGi
-        else selIdx.value = -1
       } else {
         order.value.push(item)
-        selIdx.value = flatNodes.value.length - 1
       }
     } else {
       order.value.push(item)
-      selIdx.value = flatNodes.value.length - 1
     }
-    selectedGi.value = new Set([selIdx.value])
-    anchorGi.value = selIdx.value
-    tabsStore.requestListScroll('block')
+    // 直接打开新块的标签——编辑器内容由标签驱动，不再需要桥接
+    tabsStore.open({ domain: 'block', key: id, label: 'New Block' })
     showToast(t('shared.toast.blockCreated'))
   }
   function deleteBlock(gi: number) {
@@ -462,14 +432,19 @@ export const usePresetStore = defineStore('main', () => {
         const parent = node.parent
         const idx = node.parentIdx
         if (node.isGroup) {
+          // 删除组时关闭组内所有块的标签
+          for (const child of (node.ref as OrderGroup).children) {
+            tabsStore.close('block', child.identifier)
+          }
           parent.splice(idx, 1)
         } else {
           const id = (node.ref as OrderItem).identifier
           parent.splice(idx, 1)
           const pi = prompts.value.findIndex(p => p.identifier === id)
           if (pi >= 0) prompts.value.splice(pi, 1)
+          // 关闭被删除块的标签
+          tabsStore.close('block', id)
         }
-        if (selIdx.value === gi) selIdx.value = -1
         selectedGi.value.delete(gi)
         rebuildVarIndex()
         showToast(t('shared.toast.blockDeleted'))
@@ -481,15 +456,21 @@ export const usePresetStore = defineStore('main', () => {
     if (!node) return
     const parent = node.parent
     const idx = node.parentIdx
+    if (!node.isGroup) {
+      const id = (node.ref as OrderItem).identifier
+      tabsStore.close('block', id)
+    }
     parent.splice(idx, 1)
-    if (selIdx.value === gi) selIdx.value = -1
     selectedGi.value.delete(gi)
     showToast(t('shared.toast.blockHidden'))
   }
   function addHiddenBlock(identifier: string) {
     const item: OrderItem = { identifier, enabled: true }
-    if (selIdx.value >= 0) {
-      const node = flatNodes.value[selIdx.value]
+    // 插入位置：当前激活的块后面（如果有），否则追加到末尾
+    const activeId = tabsStore.activeTab?.domain === 'block' ? tabsStore.activeTab.key : null
+    const activeGi = identifierToGi(activeId)
+    if (activeGi >= 0) {
+      const node = flatNodes.value[activeGi]
       if (node) {
         const parent = node.isGroup ? (node.ref as OrderGroup).children : node.parent
         const idx = node.isGroup ? (node.ref as OrderGroup).children.length : node.parentIdx + 1
@@ -500,13 +481,9 @@ export const usePresetStore = defineStore('main', () => {
     } else {
       order.value.push(item)
     }
-    const newGi = flatNodes.value.findIndex(n => !n.isGroup && (n.ref as OrderItem).identifier === identifier)
-    selIdx.value = newGi >= 0 ? newGi : -1
-    if (selIdx.value >= 0) {
-      selectedGi.value = new Set([selIdx.value])
-      anchorGi.value = selIdx.value
-    }
-    tabsStore.requestListScroll('block')
+    // 打开标签让编辑器显示新加的块
+    const block = prompts.value.find(p => p.identifier === identifier)
+    tabsStore.open({ domain: 'block', key: identifier, label: block?.name || identifier })
     showToast(t('shared.toast.blockAdded'))
   }
   function toggleBlock(gi: number) {
@@ -560,7 +537,6 @@ export const usePresetStore = defineStore('main', () => {
     order.value.splice(firstIdx, 0, group)
     selectedGi.value = new Set()
     anchorGi.value = -1
-    selIdx.value = -1
     showToast(t('shared.toast.boundBlocks', { count: items.length }))
   }
   function unbindGroup(gi: number) {
@@ -571,7 +547,7 @@ export const usePresetStore = defineStore('main', () => {
     const group = node.ref as OrderGroup
     parent.splice(idx, 1, ...group.children)
     selectedGi.value = new Set()
-    selIdx.value = -1
+    anchorGi.value = -1
     showToast(t('shared.toast.unbound'))
   }
   function toggleGroupCollapse(gi: number) {
@@ -579,12 +555,6 @@ export const usePresetStore = defineStore('main', () => {
     if (!node || !node.isGroup) return
     const group = node.ref as OrderGroup
     group.collapsed = !group.collapsed
-    if (group.collapsed && selIdx.value >= 0) {
-      const selNode = flatNodes.value[selIdx.value]
-      if (selNode && selNode.parent === group.children) {
-        selIdx.value = gi
-      }
-    }
   }
 
   /* ====== Search ====== */
@@ -622,19 +592,18 @@ export const usePresetStore = defineStore('main', () => {
     if (i < 0 || i >= searchResults.value.length) return
     searchIdx.value = i
     const r = searchResults.value[i]
-    const gi = revealAndFindGi(r.blockId)
-    if (gi >= 0 && gi !== selIdx.value) selectBlock(gi)
-    else if (gi >= 0) tabsStore.requestListScroll('block')
+    revealAndFindGi(r.blockId) // 自动展开折叠组
+    tabsStore.requestListScroll('block')
     requestEditorJump(r.line, r.col, r.ml, true)
   }
   function jumpToSearchResult(i: number) {
     if (i < 0 || i >= searchResults.value.length) return
     searchIdx.value = i
     const r = searchResults.value[i]
-    const gi = revealAndFindGi(r.blockId)
-    if (gi >= 0 && gi !== selIdx.value) selectBlock(gi)
-    else if (gi >= 0) tabsStore.requestListScroll('block')
-    if (gi >= 0) openTabForGi(gi)
+    revealAndFindGi(r.blockId) // 自动展开折叠组
+    // 直接打开标签——编辑器内容由标签驱动
+    const block = prompts.value.find(p => p.identifier === r.blockId)
+    tabsStore.open({ domain: 'block', key: r.blockId, label: block?.name || r.blockName })
     requestEditorJump(r.line, r.col, r.ml, false)
   }
   function navSearch(dir: number) {
@@ -718,10 +687,9 @@ export const usePresetStore = defineStore('main', () => {
     if (i < 0 || i >= filteredVarOps.value.length) return
     varIdx.value = i
     const v = filteredVarOps.value[i]
-    const gi = revealAndFindGi(v.blockId)
-    if (gi >= 0 && gi !== selIdx.value) selectBlock(gi)
-    else if (gi >= 0) tabsStore.requestListScroll('block')
-    if (gi >= 0) openTabForGi(gi)
+    revealAndFindGi(v.blockId) // 自动展开折叠组
+    const block = prompts.value.find(p => p.identifier === v.blockId)
+    tabsStore.open({ domain: 'block', key: v.blockId, label: block?.name || v.blockName })
     requestEditorJump(v.line, v.col, v.varName.length)
   }
   function navVar(dir: number) {
@@ -739,18 +707,15 @@ export const usePresetStore = defineStore('main', () => {
   const varPopupIdx = ref(-1)
   const varPopupPos = ref({ top: 0, left: 0 })
 
-  function showVarPopup(varName: string, clickGi: number, clickPos: number, pos: { top: number; left: number }) {
+  function showVarPopup(varName: string, clickBlockId: string | null, clickPos: number, pos: { top: number; left: number }) {
     const ops: VarOp[] = []
     let currentIdx = -1
     const re = new RegExp('\\{\\{(setvar|addvar)::' + escRe(varName) + '::([\\s\\S]*?)\\}\\}|\\{\\{getvar::' + escRe(varName) + '\\}\\}', 'g')
     // The click always originates from the block currently open in the editor (that's the only
-    // place enableVarClick is wired up), so resolve its identifier once up front and match by
-    // identifier below — not by re-deriving an index. Groups: scan order.value.flatMap (like
-    // generatePreviewBlocks) rather than flatNodes, since flatNodes deliberately drops the
-    // children of a COLLAPSED group (that's what drives the sidebar's collapse/expand
-    // rendering) — a collapsed group must not make its blocks' variables invisible to this popup.
-    const clickNode = flatNodes.value[clickGi]
-    const clickBlockId = clickNode && !clickNode.isGroup ? (clickNode.ref as OrderItem).identifier : null
+    // place enableVarClick is wired up), so we receive the block identifier directly.
+    // Groups: scan order.value.flatMap (like generatePreviewBlocks) rather than flatNodes, since
+    // flatNodes deliberately drops the children of a COLLAPSED group — a collapsed group must
+    // not make its blocks' variables invisible to this popup.
     const allItems = order.value.flatMap(node => isGroup(node) ? node.children : [node])
     allItems.forEach((o) => {
       const p = prompts.value.find(pp => pp.identifier === o.identifier)
@@ -787,10 +752,9 @@ export const usePresetStore = defineStore('main', () => {
     if (i < 0 || i >= varPopupOps.value.length) return
     varPopupIdx.value = i
     const v = varPopupOps.value[i]
-    const gi = revealAndFindGi(v.blockId)
-    if (gi >= 0 && gi !== selIdx.value) selectBlock(gi)
-    else if (gi >= 0) tabsStore.requestListScroll('block')
-    if (gi >= 0) openTabForGi(gi)
+    revealAndFindGi(v.blockId) // 自动展开折叠组
+    const block = prompts.value.find(p => p.identifier === v.blockId)
+    tabsStore.open({ domain: 'block', key: v.blockId, label: block?.name || v.blockName })
     requestEditorJump(v.line, v.col, v.varName.length)
   }
   function navPopupVar(dir: number) {
@@ -886,8 +850,8 @@ export const usePresetStore = defineStore('main', () => {
   }
 
   return {
-    rawData, prompts, order, selIdx, presetName, presetList,
-    flatNodes, selectedGi, anchorGi,
+    rawData, prompts, order, presetName, presetList,
+    flatNodes, selectedGi, anchorGi, identifierToGi,
     panelOpen, toastMsg, toastVisible, settings, cssVars,
     searchOpen, searchQuery, searchReplace, searchResults, searchIdx,
     varNavOpen, varFilterQ, allVarOps, filteredVarOps, varIdx,

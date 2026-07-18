@@ -35,7 +35,7 @@ export default {
 
   // ---- shared.header ----
   'shared.header.save': '💾 Save{star}',
-  'shared.header.reload': '🗘 Reload',
+  'shared.header.reload': '↻ Reload',
   'shared.header.copyBlocks': '⇆ Copy Blocks',
   'shared.header.search': '🔍 Search',
   'shared.header.settings': '⚙ Settings',

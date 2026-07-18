@@ -39,6 +39,7 @@
           <template v-else>
             <button class="pm-mobile-hamburger" :title="store.t('shared.mobile.sidebar')" @click="toggleMobileSidebar">☰</button>
             <button class="pm-btn accent" @click="store.doSavePreset()">{{ store.t('shared.header.save', { star: store.dirty ? ' *' : '' }) }}</button>
+            <button class="pm-btn" @click="store.reloadPreset()">{{ store.t('shared.header.reload') }}</button>
             <select v-if="store.presetList.length" class="pm-preset-select" :value="store.presetName" @change="onPresetSelect($event)" :title="store.t('shared.header.switchPreset')">
               <option v-if="!store.presetList.some(p => p.name === store.presetName)" :value="store.presetName" disabled>{{ store.presetName || store.t('shared.header.noneLoaded') }}</option>
               <option v-for="p in store.presetList" :key="p.name" :value="p.name">{{ p.name }}</option>
@@ -76,7 +77,6 @@
           <div class="pm-mobile-tools-grip"></div>
           <button class="pm-mobile-tools-item" :class="{ active: tabsStore.sidebarMode === 'block' }" @click="runTool(() => tabsStore.setSidebarMode('block'))">{{ store.t('shared.header.mode.block') }}</button>
           <button class="pm-mobile-tools-item" :class="{ active: tabsStore.sidebarMode === 'regex' }" @click="runTool(() => tabsStore.setSidebarMode('regex'))">{{ store.t('shared.header.mode.regex') }}</button>
-          <button class="pm-mobile-tools-item" @click="runTool(() => store.reloadPreset())">{{ store.t('shared.header.reload') }}</button>
           <button class="pm-mobile-tools-item" @click="runTool(() => { store.copyPanelOpen = true })">{{ store.t('shared.header.copyBlocks') }}</button>
           <button class="pm-mobile-tools-item" :class="{ active: store.searchOpen }" @click="runTool(toggleSearch)">{{ store.t('shared.header.search') }}</button>
           <button class="pm-mobile-tools-item" @click="runTool(() => { store.settingsOpen = true })">{{ store.t('shared.header.settings') }}</button>

@@ -35,7 +35,7 @@ export default {
 
   // ---- shared.header：顶部工具栏 ----
   'shared.header.save': '💾 保存{star}',
-  'shared.header.reload': '🗘 重新加载',
+  'shared.header.reload': '↻ 重新加载',
   'shared.header.copyBlocks': '⇆ 复制块',
   'shared.header.search': '🔍 搜索',
   'shared.header.settings': '⚙ 设置',

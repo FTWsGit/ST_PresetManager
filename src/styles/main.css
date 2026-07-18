@@ -460,12 +460,12 @@
 
 /* ===== TabBar.vue ===== */
 .pm-tabbar{display:flex;align-items:stretch;overflow-x:auto;flex-shrink:0;border-bottom:1px solid var(--pm-border);background:var(--pm-bg)}
-.pm-tab{display:flex;align-items:center;gap:6px;padding:0 10px;height:32px;border-right:1px solid var(--pm-border);cursor:pointer;white-space:nowrap;color:var(--pm-tx3);font-size:13px;flex-shrink:0}
+.pm-tab{display:flex;align-items:center;gap:6px;padding:0 5px;height:32px;border-right:1px solid var(--pm-border);cursor:pointer;white-space:nowrap;color:var(--pm-tx3);font-size:13px;flex-shrink:0}
 .pm-tab:hover{background:var(--pm-bg-h)}
 .pm-tab.active{background:var(--pm-bg-e);color:var(--pm-tx3);border-bottom:2px solid var(--pm-ac);margin-bottom:-1px}
 .pm-tab-domain-dot{width:6px;height:6px;border-radius:50%;background:var(--pm-tx3);opacity:.6;flex-shrink:0}
 .pm-tab-domain-dot.domain-regex{background:var(--pm-ac)}
-.pm-tab-close{opacity:.5;padding:0 2px;border-radius:3px}
+.pm-tab-close{font-size:24px;opacity:.5;padding:0 2px;border-radius:3px;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;line-height:1;}
 .pm-tab-close:hover{opacity:1;background:var(--pm-dg-d);color:var(--pm-dg)}
 
 

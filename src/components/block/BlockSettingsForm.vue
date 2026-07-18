@@ -19,9 +19,9 @@
 
 <script setup lang="ts">
 // 对称于 RegexSettingsForm.vue：block 域的设置表单。store.currentBlock 是指向 prompts 数组里
-// 对应元素的活引用（见 presetStore.ts 的 currentBlock computed），直接改它的字段就会同步进
-// prompts/dirty 追踪，不需要像 HighlightedEditor 那样维护本地 ref 做防抖/高亮批处理——
-// name/role 不是高频输入的热路径，没有那个必要。
+// 对应元素的活引用（直接从激活标签的 key 解析，见 presetStore.ts 的 currentBlock computed），
+// 直接改它的字段就会同步进 prompts/dirty 追踪，不需要像 HighlightedEditor 那样维护本地 ref
+// 做防抖/高亮批处理——name/role 不是高频输入的热路径，没有那个必要。
 import { usePresetStore } from '../../stores/presetStore'
 
 const store = usePresetStore()

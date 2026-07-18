@@ -44,10 +44,9 @@ const content = computed<string>({
   set: (v) => { if (store.currentBlock) store.currentBlock.content = v },
 })
 
-// Hide any open var-popup whenever the selected block changes — a stray popup pointing at the
-// previous block's variable would be showing the wrong context otherwise. `immediate: true`
-// matches the old Editor.vue's loadBlock(), which unconditionally hid it on first load too.
-watch(() => store.selIdx, () => { store.hideVarPopup() }, { immediate: true })
+// Hide any open var-popup whenever the active block tab changes — a stray popup pointing at the
+// previous block's variable would be showing the wrong context otherwise.
+watch(() => tabsStore.activeTab?.key, () => { store.hideVarPopup() }, { immediate: true })
 
 // Search-result line highlighting for the line-number gutter — block-specific (searches
 // store.currentBlock's content), so it lives here rather than in the generic component.
@@ -62,7 +61,7 @@ function lineClass(ln: number) {
 }
 
 function onVarClick(payload: { varName: string; cursorPos: number; pos: { top: number; left: number } }) {
-  store.showVarPopup(payload.varName, store.selIdx, payload.cursorPos, payload.pos)
+  store.showVarPopup(payload.varName, store.currentBlock?.identifier ?? null, payload.cursorPos, payload.pos)
 }
 
 // Settings dialog font-size/family changes don't resize the textarea element itself, so

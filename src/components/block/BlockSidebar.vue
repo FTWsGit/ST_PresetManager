@@ -17,7 +17,7 @@
         <div v-if="node.isGroup"
              :ref="(el) => setItemRef(el, gi)"
              class="pm-group-header"
-             :class="{ selected: store.selectedGi.has(gi) || store.selIdx === gi, disabled: !(node.ref as OrderGroup).enabled, 'drag-over-top': dragOverIdx === gi && dragOverPos === 'top', 'drag-over-bottom': dragOverIdx === gi && dragOverPos === 'bottom' }"
+             :class="{ selected: store.selectedGi.has(gi), disabled: !(node.ref as OrderGroup).enabled, 'drag-over-top': dragOverIdx === gi && dragOverPos === 'top', 'drag-over-bottom': dragOverIdx === gi && dragOverPos === 'bottom' }"
              :style="itemStyle(node)"
              @pointerdown="onItemMouseDown(gi, $event)"
              @click="onItemClick(gi, $event)">
@@ -44,7 +44,7 @@
         <div v-else
              :ref="(el) => setItemRef(el, gi)"
              class="pm-block-item"
-             :class="{ selected: store.selectedGi.has(gi) || store.selIdx === gi, disabled: !(node.ref as OrderItem).enabled, dragging: dragIdx === gi, 'drag-over-top': dragOverIdx === gi && dragOverPos === 'top', 'drag-over-bottom': dragOverIdx === gi && dragOverPos === 'bottom', nested: node.depth > 0 }"
+             :class="{ selected: store.selectedGi.has(gi), disabled: !(node.ref as OrderItem).enabled, dragging: dragIdx === gi, 'drag-over-top': dragOverIdx === gi && dragOverPos === 'top', 'drag-over-bottom': dragOverIdx === gi && dragOverPos === 'bottom', nested: node.depth > 0 }"
              :style="itemStyle(node)"
              @pointerdown="onItemMouseDown(gi, $event)"
              @click="onItemClick(gi, $event)">
@@ -101,6 +101,14 @@ const dragOverIdx = ref(-1)
 const dragOverPos = ref<'top' | 'bottom'>('top')
 let dragScrollRAF: number | null = null
 
+// 当前激活标签对应的 gi（视觉下标），用于侧边栏高亮/滚动/解绑分组
+// 当激活标签不是 block 域时，返回 -1（不高亮任何行），和 RegexSidebar 行为一致
+const activeGi = computed(() => {
+  const tab = tabsStore.activeTab
+  if (tab?.domain !== 'block') return -1
+  return store.identifierToGi(tab.key)
+})
+
 const canBind = computed(() => {
   const topLevel = Array.from(store.selectedGi).filter(gi =>
     store.flatNodes[gi]?.parent === store.order
@@ -108,9 +116,11 @@ const canBind = computed(() => {
   return topLevel.length >= 2
 })
 const canUnbind = computed(() => {
-  if (store.selIdx < 0) return false
-  const node = store.flatNodes[store.selIdx]
-  return node?.isGroup ?? false
+  // 只要选中的行里有至少一个是 group，就可以 unbind（支持多选 unbind？不，unbind 只需要选中一个 group 就行）
+  return Array.from(store.selectedGi).some(gi => {
+    const node = store.flatNodes[gi]
+    return node?.isGroup ?? false
+  })
 })
 
 function getBlock(id: string) { return store.prompts.find(p => p.identifier === id) }
@@ -125,8 +135,13 @@ function itemStyle(node: FlatNode) {
   return node.depth > 0 ? { paddingLeft: (8 + node.depth * 16) + 'px' } : {}
 }
 function unbindCurrent() {
-  if (store.selIdx < 0) return
-  store.unbindGroup(store.selIdx)
+  // 找到第一个选中的 group 来 unbind
+  const groupGi = Array.from(store.selectedGi).find(gi => {
+    const node = store.flatNodes[gi]
+    return node?.isGroup ?? false
+  })
+  if (groupGi === undefined) return
+  store.unbindGroup(groupGi)
 }
 
 // Group name editing
@@ -233,7 +248,9 @@ function setItemRef(el: any, i: number) {
   else itemEls.delete(i)
 }
 function scrollSelectedIntoView() {
-  const el = itemEls.get(store.selIdx)
+  // 滚动到第一个选中的元素
+  const firstGi = Array.from(store.selectedGi).sort((a, b) => a - b)[0]
+  const el = itemEls.get(firstGi)
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
 }
 watch(() => tabsStore.listScrollToken['block'], () => { nextTick(scrollSelectedIntoView) })
@@ -381,6 +398,7 @@ function onItemMouseDown(i: number, e: PointerEvent) {
     longPressTimer = setTimeout(() => {
       longPressTimer = null
       store.selectBlock(i, { ctrl: true })
+      store.anchorGi = i
       if (navigator.vibrate) navigator.vibrate(40)
       suppressClick = true
     }, LONG_PRESS_MS)
@@ -434,14 +452,30 @@ function onItemMouseDown(i: number, e: PointerEvent) {
 
 function onItemClick(gi: number, e: MouseEvent) {
   if (suppressClick) { suppressClick = false; return }
-  store.selectBlock(gi, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey })
   const node = store.flatNodes[gi]
-  if (node && !node.isGroup) {
-    if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
-      const item = node.ref as OrderItem
-      const block = store.prompts.find(p => p.identifier === item.identifier)
-      tabsStore.open({ domain: 'block', key: item.identifier, label: block?.name || item.identifier })
-    }
+  if (!node) return
+
+  // 标准多选交互：
+  // - Ctrl/Cmd+Click: 切换单个选中状态
+  // - Shift+Click: 范围选中（基于上次点击的锚点）
+  // - 普通点击: 清空多选，选中当前行，打开标签/切换折叠
+  if (e.ctrlKey || e.metaKey || e.shiftKey) {
+    store.selectBlock(gi, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey })
+    return
+  }
+
+  // 普通点击：清空多选，选中当前行，设置锚点，打开标签/切换折叠
+  store.selectedGi.clear()
+  store.selectedGi.add(gi) // 表面高亮完全对应 selectedGi，不再有 activeGi 干扰
+  store.anchorGi = gi
+
+  if (node.isGroup) {
+    // 点击组标题：切换折叠状态
+    store.toggleGroupCollapse(gi)
+  } else {
+    const item = node.ref as OrderItem
+    const block = store.prompts.find(p => p.identifier === item.identifier)
+    tabsStore.open({ domain: 'block', key: item.identifier, label: block?.name || item.identifier })
   }
 }
 </script>
