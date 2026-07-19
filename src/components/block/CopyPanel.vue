@@ -178,9 +178,14 @@ function clearSel(side: Side) {
  *  entries within it, see presetStore.ts's importOrderWithGroups/exportOrder) — no tree to build
  *  here. */
 function ensureOrder(data: PresetData): OrderItem[] {
-  if (!Array.isArray(data.prompt_order) || !data.prompt_order.length) data.prompt_order = [{ order: [] }]
-  if (!Array.isArray(data.prompt_order[0].order)) data.prompt_order[0].order = []
-  return data.prompt_order[0].order
+  if (!Array.isArray(data.prompt_order)) data.prompt_order = []
+  let entry = data.prompt_order.find((p: any) => p.character_id === 100001)
+  if (!entry) {
+    entry = { character_id: 100001, order: [] }
+    data.prompt_order.push(entry)
+  }
+  if (!Array.isArray(entry.order)) entry.order = []
+  return entry.order
 }
 
 function copy(from: Side) {

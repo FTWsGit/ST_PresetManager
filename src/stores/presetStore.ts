@@ -265,8 +265,8 @@ export const usePresetStore = defineStore('main', () => {
     rawData.value = data
     prompts.value = data.prompts || []
     const po = data.prompt_order
-    const rawOrder = (Array.isArray(po) && po.length && Array.isArray(po[0].order))
-      ? po[0].order
+    const rawOrder = (Array.isArray(po) && po.length)
+      ? (po.find((p: any) => p.character_id === 100001)?.order ?? [])
       : []
     order.value = importOrderWithGroups(rawOrder)
     selectedGi.value = new Set()
@@ -325,8 +325,14 @@ export const usePresetStore = defineStore('main', () => {
   async function doSavePreset() {
     if (!rawData.value) { showToast(t('shared.toast.noDataToSave')); return }
     rawData.value.prompts = [...prompts.value]
-    if (rawData.value.prompt_order?.length)
-      rawData.value.prompt_order[0].order = exportOrder(order.value)
+    if (rawData.value.prompt_order?.length) {
+      let entry = rawData.value.prompt_order.find((p: any) => p.character_id === 100001)
+      if (!entry) {
+        entry = { character_id: 100001, order: [] }
+        rawData.value.prompt_order.push(entry)
+      }
+      entry.order = exportOrder(order.value)
+    }
     const name = presetName.value || 'preset_modified'
     try {
       // rawData.value is a live Pinia/Vue-reactive object (ref() deep-wraps it, and everything
@@ -350,10 +356,18 @@ export const usePresetStore = defineStore('main', () => {
 
   async function createPreset(name: string) {
     const source = presetName.value ? ST.getPresetByName(presetName.value) : null
-    const blank: PresetData = source ?? { prompts: [], prompt_order: [{ order: [] }] }
+    const blank: PresetData = source ?? { prompts: [], prompt_order: [{ character_id: 100001, order: [] }] }
     blank.prompts = []
-    if (!Array.isArray(blank.prompt_order) || !blank.prompt_order[0]) blank.prompt_order = [{ order: [] }]
-    else blank.prompt_order[0].order = []
+    if (!Array.isArray(blank.prompt_order)) blank.prompt_order = [{ character_id: 100001, order: [] }]
+    else {
+      let entry = blank.prompt_order.find((p: any) => p.character_id === 100001)
+      if (!entry) {
+        entry = { character_id: 100001, order: [] }
+        blank.prompt_order.push(entry)
+      } else {
+        entry.order = []
+      }
+    }
     if (blank.extensions) blank.extensions.regex_scripts = []
     try {
       await ST.savePresetAs(name, blank)

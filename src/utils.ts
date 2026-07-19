@@ -54,8 +54,8 @@ export function orderedPromptsWithHidden(data: PresetData): OrderedBlockEntry[] 
   const byId = new Map(data.prompts.map(p => [p.identifier, p]))
   const seen = new Set<string>()
   const out: OrderedBlockEntry[] = []
-  const rawOrder = (Array.isArray(data.prompt_order) && data.prompt_order.length && Array.isArray(data.prompt_order[0].order))
-    ? data.prompt_order[0].order
+  const rawOrder = (Array.isArray(data.prompt_order) && data.prompt_order.length)
+    ? (data.prompt_order.find((p: any) => p.character_id === 100001)?.order ?? [])
     : []
   for (const item of rawOrder) {
     if (seen.has(item.identifier)) continue
