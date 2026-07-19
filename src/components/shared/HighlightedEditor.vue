@@ -31,6 +31,7 @@
     <div class="pm-editor-wrap">
       <pre class="pm-editor-hl" ref="hlRef" v-html="hlHtml"></pre>
       <textarea class="pm-editor-ta" ref="taRef" spellcheck="false" :placeholder="placeholder"
+                :readonly="disabled"
                 :value="content" @input="onInput" @scroll="syncScroll"
                 @keydown="onKeydown" @click="onClick" @keyup="updateCursor"></textarea>
       <!-- hidden mirror used to measure single-line height / caret coords (handles CJK / tabs / mixed width) -->
@@ -74,6 +75,7 @@ const props = withDefaults(defineProps<{
   statusCharsLabel?: string
   /** i18n: line count label, e.g. "{count} lines". Receives {count} param. */
   statusLinesLabel?: string
+  disabled?: boolean
 }>(), {
   jump: null,
   lineClass: () => '',
@@ -83,6 +85,7 @@ const props = withDefaults(defineProps<{
   statusCursorLabel: 'Ln {line}, Col {col}',
   statusCharsLabel: '{count} chars',
   statusLinesLabel: '{count} lines',
+  disabled: false,
 })
 
 const emit = defineEmits<{
@@ -144,6 +147,7 @@ watch(() => props.jump, (jump) => {
 })
 
 function onInput(e: Event) {
+  if (props.disabled) return
   content.value = (e.target as HTMLTextAreaElement).value
   emit('update:modelValue', content.value)
   scheduleRenderUpdate()

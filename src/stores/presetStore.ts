@@ -434,6 +434,14 @@ export const usePresetStore = defineStore('main', () => {
   function deleteBlock(gi: number) {
     const node = flatNodes.value[gi]
     if (!node) return
+    if (!node.isGroup) {
+      const id = (node.ref as OrderItem).identifier
+      const block = prompts.value.find(p => p.identifier === id)
+      if (block?.marker) {
+        showToast(t('shared.toast.cannotDeleteMarker'))
+        return
+      }
+    }
     const name = node.isGroup
       ? (node.ref as OrderGroup).name || t('common.unnamed')
       : prompts.value.find(p => p.identifier === (node.ref as OrderItem).identifier)?.name || t('common.new')

@@ -98,6 +98,7 @@ export default {
   'shared.toast.previewFailed': 'Preview failed: {msg}',
   'shared.toast.renderedFullPrompt': 'Rendered full prompt',
   'shared.toast.renderedBlocks': 'Rendered {count} block(s)',
+  'shared.toast.cannotDeleteMarker': 'Can not delete Marker',
 
   // ---- shared.confirm ----
   'shared.confirm.switchPreset.title': 'Switch preset?',

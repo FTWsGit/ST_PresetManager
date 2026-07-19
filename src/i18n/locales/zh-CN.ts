@@ -98,6 +98,7 @@ export default {
   'shared.toast.previewFailed': '预览失败：{msg}',
   'shared.toast.renderedFullPrompt': '已渲染完整提示词',
   'shared.toast.renderedBlocks': '已渲染 {count} 个块',
+  'shared.toast.cannotDeleteMarker': '不能删除Marker块',
 
   // ---- shared.confirm：通用确认弹窗 ----
   'shared.confirm.switchPreset.title': '切换预设？',

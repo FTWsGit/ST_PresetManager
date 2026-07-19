@@ -16,6 +16,7 @@
     <HighlightedEditor
       ref="editorRef"
       v-model="content"
+      :disabled="store.currentBlock?.marker ?? false"
       :jump="store.editorJump"
       :line-class="lineClass"
       enable-var-click
