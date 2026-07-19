@@ -318,7 +318,6 @@ export const usePresetStore = defineStore('main', () => {
    *  discarded (the caller/UI is expected to confirm first if that matters). */
   function switchPreset(name: string) {
     if (!name || name === presetName.value) return
-    //ST.selectPresetByName(name) // Slow. Disable it for now.
     loadPresetByName(name)
   }
 
@@ -797,6 +796,14 @@ export const usePresetStore = defineStore('main', () => {
     return macroAwareDiff(raw, rendered)
   }
 
+  /** For Now, the only Function that will use ST main Menu data is Block Preview.
+   * And since switch to another preset is SLOW in ST, we decided to only *select*(switch) preset
+   * when the selected preset in main Menu is different with the chosen preset in script.*/
+  function selectPresetByName(name: string) {
+    if (!name || ST.getSelectedPresetName() === name) return
+    if (!ST.selectPresetByName(name)) showToast(t('shared.toast.selectPresetFailed'))
+  }
+
   /** Per-block precise preview (方案B): each card shows the block's REAL rendered text — after
    *  macros, regex, and other extensions all ran — sourced from the openai.js promptManager
    *  singleton, not from our own macro simulation. Substituted/inserted text (vs. the block's
@@ -891,7 +898,7 @@ export const usePresetStore = defineStore('main', () => {
     bindSelected, unbindGroup, toggleGroupCollapse,
     doSearch, navSearch, jumpToSearchResult, replaceCurrent, replaceAll,
     rebuildVarIndex, filterVarNav, navVar, jumpToVarOp,
-    generatePreviewBlocks, generatePreviewRaw, togglePreviewBlock, toggleAllPreviewBlocks,
+    generatePreviewBlocks, generatePreviewRaw, togglePreviewBlock, toggleAllPreviewBlocks, selectPresetByName,
     saveSettings, resetSettings, showToast, t, currentLocale,
   }
 })

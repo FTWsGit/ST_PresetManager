@@ -83,18 +83,18 @@ export function getPresetByName(name: string): PresetData | null {
  * If don't switch the selection, when the external function running
  * you will get different data that is different with what you're looking
  * like window.SillyTavern.generate() will use selected preset to run
- * But this will be SLOW. So we just don't use it yet. 
+ * But this will be SLOW.
  */
 
-// export function selectPresetByName(name: string): boolean {
-//   const pm = getPresetManager()
-//   try {
-//     let id = pm.findPreset(name)
-//     pm.selectPreset(id)
-//   } catch {return false}
+export function selectPresetByName(name: string): boolean {
+  const pm = getPresetManager()
+  try {
+    let id = pm.findPreset(name)
+    pm.selectPreset(id)
+  } catch {return false}
 
-//   return true
-// }
+  return true
+}
 
 /** 保存到指定名字的预设——同样不要求是当前选中的那个，可以另存/切换后再存。
  *

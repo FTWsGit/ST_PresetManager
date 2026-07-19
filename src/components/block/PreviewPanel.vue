@@ -89,6 +89,7 @@ function renderSegments(segments: PreviewSegment[]) {
 }
 
 function generate() {
+  store.selectPresetByName(store.presetName)
   if (store.previewMode === 'blocks') store.generatePreviewBlocks()
   else store.generatePreviewRaw()
 }
