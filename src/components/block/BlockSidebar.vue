@@ -75,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { usePresetStore } from '../../stores/presetStore'
 import type { OrderItem, OrderGroup, FlatNode } from '../../types'
 import { usePanelResize } from '../../composables/usePanelResize'
@@ -84,6 +84,7 @@ import { roleClass as roleClassOf } from '../../utils'
 import { useTabsStore } from '../../stores/tabsStore'
 import { useListScrollSync } from '../../composables/useListScrollSync'
 import { useDragReorder } from '../../composables/useDragReorder'
+import { useInlineRename } from '../../composables/useInlineRename'
 import ListToolbar from '../shared/ListToolbar.vue'
 
 // Explicit prop rather than relying on Vue's automatic class/attr fallthrough from the parent:
@@ -147,84 +148,58 @@ function unbindCurrent() {
   store.unbindGroup(groupGi)
 }
 
-// Group name editing
-const editingGroupGi = ref(-1)
-const groupNameInputRef = ref<HTMLInputElement | null>(null)
-
-function setGroupNameInput(el: any, gi: number) {
-  if (el) {
-    groupNameInputRef.value = el as HTMLInputElement
-    nextTick(() => {
-      const input = groupNameInputRef.value
-      if (input) {
-        input.focus()
-        input.select()
-      }
-    })
-  }
-}
-
+// Group name editing — see useInlineRename.ts's doc comment for why this and block name editing
+// below are two separate instances rather than one shared state machine.
+const {
+  editingId: editingGroupGi,
+  setInputRef: setGroupNameInputRaw,
+  start: startEditGroupNameRaw,
+  finish: finishEditGroupName,
+  cancel: cancelEditGroupName,
+} = useInlineRename<number>({
+  getCurrentName: (gi) => {
+    const node = store.flatNodes[gi]
+    return node && node.isGroup ? (node.ref as OrderGroup).name : ''
+  },
+  onCommit: (gi, newName) => {
+    const node = store.flatNodes[gi]
+    if (node && node.isGroup) (node.ref as OrderGroup).name = newName
+  },
+})
+function setGroupNameInput(el: any, _gi: number) { setGroupNameInputRaw(el) }
 function startEditGroupName(gi: number) {
   const node = store.flatNodes[gi]
   if (!node || !node.isGroup) return
-  editingGroupGi.value = gi
+  startEditGroupNameRaw(gi)
 }
 
 // Block name editing
-const editingBlockGi = ref(-1)
-const blockNameInputRef = ref<HTMLInputElement | null>(null)
-
-function setBlockNameInput(el: any, gi: number) {
-  if (el) {
-    blockNameInputRef.value = el as HTMLInputElement
-    nextTick(() => {
-      const input = blockNameInputRef.value
-      if (input) {
-        input.focus()
-        input.select()
-      }
-    })
-  }
-}
-
-function startEditBlockName(gi: number) {
-  const node = store.flatNodes[gi]
-  if (!node || node.isGroup) return
-  editingBlockGi.value = gi
-}
-
-function finishEditBlockName(gi: number, e: Event) {
-  const input = e.target as HTMLInputElement
-  const newName = input.value.trim()
-  const node = store.flatNodes[gi]
-  if (node && !node.isGroup && newName) {
+const {
+  editingId: editingBlockGi,
+  setInputRef: setBlockNameInputRaw,
+  start: startEditBlockNameRaw,
+  finish: finishEditBlockName,
+  cancel: cancelEditBlockName,
+} = useInlineRename<number>({
+  getCurrentName: (gi) => {
+    const node = store.flatNodes[gi]
+    if (!node || node.isGroup) return ''
+    const item = node.ref as OrderItem
+    return getBlock(item.identifier)?.name || item.identifier
+  },
+  onCommit: (gi, newName) => {
+    const node = store.flatNodes[gi]
+    if (!node || node.isGroup) return
     const item = node.ref as OrderItem
     const p = store.prompts.find(pp => pp.identifier === item.identifier)
     if (p) p.name = newName
-  }
-  editingBlockGi.value = -1
-  blockNameInputRef.value = null
-}
-
-function cancelEditBlockName() {
-  editingBlockGi.value = -1
-  blockNameInputRef.value = null
-}
-
-function finishEditGroupName(gi: number, e: Event) {
-  const input = e.target as HTMLInputElement
-  const newName = input.value.trim()
+  },
+})
+function setBlockNameInput(el: any, _gi: number) { setBlockNameInputRaw(el) }
+function startEditBlockName(gi: number) {
   const node = store.flatNodes[gi]
-  if (node && node.isGroup && newName) {
-    (node.ref as OrderGroup).name = newName
-  }
-  editingGroupGi.value = -1
-  groupNameInputRef.value = null
-}
-
-function cancelEditGroupName() {
-  editingGroupGi.value = -1
-  groupNameInputRef.value = null
+  if (!node || node.isGroup) return
+  startEditBlockNameRaw(gi)
 }
 
 function onGroupToggle(gi: number) {
