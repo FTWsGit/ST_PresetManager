@@ -79,10 +79,11 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { usePresetStore } from '../../stores/presetStore'
 import type { OrderItem, OrderGroup, FlatNode } from '../../types'
 import { usePanelResize } from '../../composables/usePanelResize'
-import { getHostDocument, getHostWindow } from '../../composables/hostEnv'
+import { getHostWindow } from '../../composables/hostEnv'
 import { roleClass as roleClassOf } from '../../utils'
 import { useTabsStore } from '../../stores/tabsStore'
 import { useListScrollSync } from '../../composables/useListScrollSync'
+import { useDragReorder } from '../../composables/useDragReorder'
 import ListToolbar from '../shared/ListToolbar.vue'
 
 // Explicit prop rather than relying on Vue's automatic class/attr fallthrough from the parent:
@@ -97,10 +98,19 @@ const props = defineProps<{ mobileDrawerOpen?: boolean }>()
 const tabsStore = useTabsStore()
 const store = usePresetStore()
 const listRef = ref<HTMLElement>()
-const dragIdx = ref<number | null>(null)
-const dragOverIdx = ref(-1)
-const dragOverPos = ref<'top' | 'bottom'>('top')
-let dragScrollRAF: number | null = null
+
+// Drag-to-reorder mechanics (pointer tracking, auto-scroll-near-edge, throttled drag-over calc,
+// text-selection suppression) all live in useDragReorder now — see its module doc comment. What
+// stays here is block-specific: the group-insert semantics interpretation of onDrop's
+// (from, to, after) (handled entirely inside store.reorderBlock, unchanged) and the long-press
+// multi-select gesture below (a different interaction from dragging, not migrated yet — see
+// sidebar-refactor-report.md 四.3/四.4, this is useListSelection.ts's job later).
+const {
+  dragIdx, dragOverIdx, dragOverPos, itemEls,
+  setItemRef,
+  onItemMouseDown: onDragPointerDown,
+  consumeSuppressClick: consumeDragSuppressClick,
+} = useDragReorder<number>({ autoScrollContainer: () => listRef.value })
 
 const canBind = computed(() => {
   const topLevel = Array.from(store.selectedGi).filter(gi =>
@@ -237,12 +247,9 @@ watch(() => resize.active.value, (v) => { if (!v) store.saveSettings() })
    scrolled to a stale selection instead of the tab that was just focused. useListScrollSync
    resolves the target from activeTab.key instead — the same basis RegexSidebar.vue always used
    — via identifierToGi(), the existing one-way "identifier -> gi" lookup (also used by
-   revealAndFindGi). See useListScrollSync.ts's doc comment. */
-const itemEls = new Map<number, HTMLElement>()
-function setItemRef(el: any, i: number) {
-  if (el) itemEls.set(i, el as HTMLElement)
-  else itemEls.delete(i)
-}
+   revealAndFindGi). Shares the same itemEls map useDragReorder already populates via setItemRef
+   in the template — one map, one source of truth, same reasoning as useDragReorder's doc comment
+   on why it exposes itemEls at all. */
 useListScrollSync({
   domain: 'block',
   itemEls,
@@ -262,67 +269,15 @@ useListScrollSync({
    dragover/drop coordinates back to the page. Result: dragstart fires (so the "dragging" class
    flips on), but the item is otherwise stuck — "grabs but doesn't move". We can't flip that
    Tauri flag ourselves (it lives in the host app's tauri.conf.json, not this script), so instead
-   we reimplement the whole interaction on plain mousedown/mousemove/mouseup, the same pattern
-   already used in usePanelResize.ts. Plain mouse events aren't native drag sessions, so nothing
-   here goes through the OS-level path Tauri intercepts.
-
-   We throttle dragover-equivalent updates with requestAnimationFrame and only touch the ref
-   when the effective (index, position) actually changes, to avoid re-rendering the whole
-   v-for list on every mousemove tick. */
-let dragRAF = 0
-let pendingOver: { idx: number; pos: 'top' | 'bottom' } | null = null
-function flushDragOver() {
-  dragRAF = 0
-  if (!pendingOver) return
-  if (dragOverIdx.value !== pendingOver.idx) dragOverIdx.value = pendingOver.idx
-  if (dragOverPos.value !== pendingOver.pos) dragOverPos.value = pendingOver.pos
+   we reimplement the whole interaction on plain pointerdown/pointermove/pointerup — now inside
+   useDragReorder.ts (see its module doc comment for the full reasoning, previously duplicated
+   here). This component only supplies onDrop's block-specific interpretation: `gi`-space
+   from/to/after gets handed straight to store.reorderBlock(), which already owns the group-insert
+   semantics (dropping just inside vs. between groups) — nothing about that logic changes here,
+   see sidebar-refactor-report.md 四.3 on why that stays out of the composable. */
+function onDragDrop(from: number, to: number, after: boolean) {
+  store.reorderBlock(from, to, after)
 }
-
-function suppressSelection() {
-  const hostDoc = getHostDocument()
-  hostDoc.body.style.userSelect = 'none'
-  ;(hostDoc.body.style as any).webkitUserSelect = 'none'
-}
-function restoreSelection() {
-  const hostDoc = getHostDocument()
-  hostDoc.body.style.userSelect = ''
-  ;(hostDoc.body.style as any).webkitUserSelect = ''
-}
-
-// Figure out which item the pointer is currently over, and whether it's in the top or bottom
-// half of that item (that decides insert-before vs insert-after). Falls back to clamping to the
-// first/last item when the pointer is above/below the whole list, so dragging past either end
-// still gives a sensible drop target instead of silently doing nothing.
-function updateDragOver(clientY: number) {
-  let bestIdx = -1
-  let bestPos: 'top' | 'bottom' = 'top'
-  for (const [idx, el] of itemEls) {
-    const r = el.getBoundingClientRect()
-    if (clientY >= r.top && clientY <= r.bottom) {
-      bestIdx = idx
-      bestPos = clientY < r.top + r.height / 2 ? 'top' : 'bottom'
-      break
-    }
-  }
-  if (bestIdx === -1 && itemEls.size) {
-    const first = itemEls.get(0)
-    const last = itemEls.get(itemEls.size - 1)
-    if (first && clientY < first.getBoundingClientRect().top) { bestIdx = 0; bestPos = 'top' }
-    else if (last && clientY > last.getBoundingClientRect().bottom) { bestIdx = itemEls.size - 1; bestPos = 'bottom' }
-  }
-  pendingOver = bestIdx === -1 ? null : { idx: bestIdx, pos: bestPos }
-  if (!dragRAF) dragRAF = requestAnimationFrame(flushDragOver)
-}
-
-function handleListAutoScroll(clientY: number) {
-  if (!listRef.value) return
-  const rect = listRef.value.getBoundingClientRect(), th = 70, spd = 40
-  if (clientY - rect.top < th) startDragScroll(-Math.ceil(spd * (1 - (clientY - rect.top) / th)))
-  else if (rect.bottom - clientY < th) startDragScroll(Math.ceil(spd * (1 - (rect.bottom - clientY) / th)))
-  else stopDragScroll()
-}
-function startDragScroll(s: number) { if (!dragScrollRAF) (function t() { if (listRef.value) listRef.value.scrollTop += s; dragScrollRAF = requestAnimationFrame(t) })() }
-function stopDragScroll() { if (dragScrollRAF) { cancelAnimationFrame(dragScrollRAF); dragScrollRAF = null } }
 
 // Pointer events during the drag happen over the TOP document (see hostEnv.ts), so listeners
 // must go on the host window, exactly like usePanelResize does for panel resizing.
@@ -345,6 +300,14 @@ function stopDragScroll() { if (dragScrollRAF) { cancelAnimationFrame(dragScroll
 // `touch-action: none` in main.css so a touch that DOES land there is never also read as "start
 // scrolling", but nothing outside the handle is touch-action-restricted, so normal list scrolling
 // is untouched everywhere else in the row.
+//
+// The long-press-to-multi-select gesture below is a SEPARATE interaction from dragging (it only
+// fires for touch/pen off the drag handle, where useDragReorder's own onItemMouseDown
+// deliberately does nothing — see its doc comment), so it stays local here rather than moving
+// into useDragReorder. It's still domain-agnostic in principle (nothing here is block-specific)
+// and is the next thing to extract, into useListSelection.ts — see sidebar-refactor-report.md
+// 四.3/四.4, which calls this out as the highest-risk step precisely because this gesture touches
+// store-level selection state (store.selectBlock/store.anchorGi), not local component state.
 const DRAG_THRESHOLD = 4
 const LONG_PRESS_MS = 200
 let suppressClick = false
@@ -358,16 +321,13 @@ function cancelLongPress() {
 }
 
 function onItemMouseDown(i: number, e: PointerEvent) {
-  const hostWin = getHostWindow()
-
-  if (e.pointerType === 'mouse') {
-    if (e.button !== 0) return
-  } else if (!(e.target as HTMLElement).closest('.pm-drag-handle')) {
+  if (e.pointerType !== 'mouse' && !(e.target as HTMLElement).closest('.pm-drag-handle')) {
     // touch/pen off the handle — long-press to multi-select, scroll otherwise.
     // We don't start a drag here (the browser's native scroll should win), but we DO
     // watch for a hold: if the finger stays within DRAG_THRESHOLD for LONG_PRESS_MS,
     // we treat it as a Ctrl+Click toggle (multi-select). Moving past the threshold
     // cancels the timer and lets the browser handle it as a normal scroll gesture.
+    const hostWin = getHostWindow()
     const startX = e.clientX
     const startY = e.clientY
     const pointerId = e.pointerId
@@ -404,52 +364,12 @@ function onItemMouseDown(i: number, e: PointerEvent) {
     return
   }
 
-  // Mouse, or touch/pen that landed on the drag handle — start tracking a drag.
-  const startX = e.clientX
-  const startY = e.clientY
-  const pointerId = e.pointerId
-  let dragging = false
-
-  function onMove(ev: PointerEvent) {
-    if (ev.pointerId !== pointerId) return
-    if (!dragging) {
-      if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD && Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return
-      dragging = true
-      dragIdx.value = i
-      suppressSelection()
-    }
-    updateDragOver(ev.clientY)
-    handleListAutoScroll(ev.clientY)
-  }
-
-  function onUp(ev: PointerEvent) {
-    if (ev.pointerId !== pointerId) return
-    hostWin.removeEventListener('pointermove', onMove)
-    hostWin.removeEventListener('pointerup', onUp)
-    hostWin.removeEventListener('pointercancel', onUp)
-    restoreSelection()
-    stopDragScroll()
-    if (dragging) {
-      // A real drag happened — the browser will still fire a native `click` on pointerup at the
-      // same target even though the pointer moved, so swallow that one click via onItemClick.
-      suppressClick = true
-      const from = dragIdx.value
-      const over = pendingOver
-      if (from !== null && over && over.idx !== from) {
-        store.reorderBlock(from, over.idx, over.pos === 'bottom')
-      }
-    }
-    dragIdx.value = null
-    dragOverIdx.value = -1
-    pendingOver = null
-  }
-
-  hostWin.addEventListener('pointermove', onMove)
-  hostWin.addEventListener('pointerup', onUp)
-  hostWin.addEventListener('pointercancel', onUp)
+  // Mouse, or touch/pen that landed on the drag handle — hand off entirely to useDragReorder.
+  onDragPointerDown(i, e, onDragDrop)
 }
 
 function onItemClick(gi: number, e: MouseEvent) {
+  if (consumeDragSuppressClick()) return
   if (suppressClick) { suppressClick = false; return }
   const node = store.flatNodes[gi]
   if (!node) return

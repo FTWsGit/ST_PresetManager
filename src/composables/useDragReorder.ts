@@ -1,4 +1,4 @@
-import { getHostWindow } from './hostEnv'
+import { getHostDocument, getHostWindow } from './hostEnv'
 import { ref } from 'vue'
 
 const DRAG_THRESHOLD = 4
@@ -51,15 +51,46 @@ export function useDragReorder<T = number>(opts?: { autoScrollContainer?: () => 
     const el = itemEls.get(i)
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }
+
+  // Throttle dragover-equivalent updates with requestAnimationFrame, and only touch the refs
+  // when the effective (idx, pos) actually changes, to avoid re-rendering the whole v-for list on
+  // every pointermove tick — ported from BlockSidebar.vue's flushDragOver/pendingOver, which
+  // mattered there because block lists can be long; kept generic here since nothing about it is
+  // block-specific and a short regex list is strictly no worse off with it.
+  let dragRAF = 0
+  let pendingOver: { idx: T; pos: 'top' | 'bottom' } | null = null
+  function flushDragOver() {
+    dragRAF = 0
+    if (!pendingOver) return
+    if (dragOverIdx.value !== pendingOver.idx) dragOverIdx.value = pendingOver.idx
+    if (dragOverPos.value !== pendingOver.pos) dragOverPos.value = pendingOver.pos
+  }
+  // Figure out which item the pointer is currently over, and whether it's in the top or bottom
+  // half of that item (that decides insert-before vs insert-after). Falls back to clamping to the
+  // first/last item when the pointer is above/below the whole list, so dragging past either end
+  // still gives a sensible drop target instead of silently doing nothing — "first"/"last" here
+  // means first/last in itemEls' insertion order, which for a v-for-rendered list is always its
+  // visual top-to-bottom order, so this doesn't need to assume anything numeric about `T`.
   function updateDragOver(clientY: number) {
+    let bestIdx: T | null = null
+    let bestPos: 'top' | 'bottom' = 'top'
     for (const [idx, el] of itemEls) {
       const r = el.getBoundingClientRect()
       if (clientY >= r.top && clientY <= r.bottom) {
-        dragOverIdx.value = idx
-        dragOverPos.value = clientY < r.top + r.height / 2 ? 'top' : 'bottom'
-        return
+        bestIdx = idx
+        bestPos = clientY < r.top + r.height / 2 ? 'top' : 'bottom'
+        break
       }
     }
+    if (bestIdx === null && itemEls.size) {
+      const entries = Array.from(itemEls.entries())
+      const [firstIdx, firstEl] = entries[0]
+      const [lastIdx, lastEl] = entries[entries.length - 1]
+      if (clientY < firstEl.getBoundingClientRect().top) { bestIdx = firstIdx; bestPos = 'top' }
+      else if (clientY > lastEl.getBoundingClientRect().bottom) { bestIdx = lastIdx; bestPos = 'bottom' }
+    }
+    pendingOver = bestIdx === null ? null : { idx: bestIdx, pos: bestPos }
+    if (!dragRAF) dragRAF = requestAnimationFrame(flushDragOver)
   }
 
   function stopDragScroll() {
@@ -87,6 +118,21 @@ export function useDragReorder<T = number>(opts?: { autoScrollContainer?: () => 
     } else {
       stopDragScroll()
     }
+  }
+
+  // Suppresses host-document text selection while dragging — without this, a fast drag gesture
+  // also selects the text of whatever it passes over, which looks broken. Ported from
+  // BlockSidebar.vue's suppressSelection/restoreSelection; kept generic since it has nothing to
+  // do with blocks specifically, any drag-to-reorder list wants this.
+  function suppressSelection() {
+    const hostDoc = getHostDocument()
+    hostDoc.body.style.userSelect = 'none'
+    ;(hostDoc.body.style as any).webkitUserSelect = 'none'
+  }
+  function restoreSelection() {
+    const hostDoc = getHostDocument()
+    hostDoc.body.style.userSelect = ''
+    ;(hostDoc.body.style as any).webkitUserSelect = ''
   }
 
   /**
@@ -123,6 +169,7 @@ export function useDragReorder<T = number>(opts?: { autoScrollContainer?: () => 
         if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD && Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return
         dragging = true
         dragIdx.value = i
+        suppressSelection()
       }
       updateDragOver(ev.clientY)
       handleListAutoScroll(ev.clientY)
@@ -132,13 +179,19 @@ export function useDragReorder<T = number>(opts?: { autoScrollContainer?: () => 
       hostWin.removeEventListener('pointermove', onMove)
       hostWin.removeEventListener('pointerup', onUp)
       hostWin.removeEventListener('pointercancel', onUp)
+      restoreSelection()
       stopDragScroll()
       if (dragging) {
+        // A real drag happened — the browser will still fire a native `click` on pointerup at
+        // the same target even though the pointer moved, so the caller should swallow that one
+        // click via consumeSuppressClick().
         suppressClick = true
-        if (dragOverIdx.value !== null && dragOverIdx.value !== i) onDrop(i, dragOverIdx.value, dragOverPos.value === 'bottom')
+        const over = pendingOver
+        if (over && over.idx !== i) onDrop(i, over.idx, over.pos === 'bottom')
       }
       dragIdx.value = null
       dragOverIdx.value = null
+      pendingOver = null
     }
     hostWin.addEventListener('pointermove', onMove)
     hostWin.addEventListener('pointerup', onUp)
