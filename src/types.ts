@@ -4,7 +4,6 @@ export interface PresetBlock {
   content: string
   role: 'system' | 'user' | 'assistant'
   system_prompt: boolean
-  enabled: boolean
   marker: boolean
   [k: string]: any
 }
@@ -178,3 +177,6 @@ export const REGEX_SUBSTITUTE_OPTIONS = [
   { value: 1, labelKey: 'regex.substitute.raw' },
   { value: 2, labelKey: 'regex.substitute.escaped' },
 ] as const
+
+import defaultPreset from '../default/default_preset.json'
+export const DEFAULT_PRESET = defaultPreset as PresetData  

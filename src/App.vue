@@ -346,7 +346,6 @@ function onNewPreset() {
     confirmText: store.t('shared.prompt.newPreset.confirm'), 
     cancelText: store.t('shared.prompt.newPreset.cancel'),
     onConfirm: (name) => {
-      if (store.presetList.some(p => p.name === name)) { store.showToast(store.t('shared.toast.duplicatePresetName')); return }
       store.createPreset(name)
     },
   })

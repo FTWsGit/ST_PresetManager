@@ -7,6 +7,7 @@ import { escRe, macroAwareDiff, applyMultiSelect } from '../utils'
 import { useUiState } from '../composables/useUiState'
 import { useTabsStore } from './tabsStore'
 import { useConfirmStore } from './confirmStore'
+import { DEFAULT_PRESET } from '../types'
 
 export function isGroup(node: OrderNode): node is OrderGroup {
   return 'children' in node && Array.isArray((node as any).children)
@@ -165,10 +166,6 @@ export const usePresetStore = defineStore('main', () => {
   }
 
   /* ====== Computed ====== */
-  /**
-   * 当前正在编辑的块，直接从激活的 block 标签的 key 解析，不再依赖 selIdx/flatNodes。
-   * selIdx 现在只用于侧边栏的视觉高亮和滚动定位，不再参与数据查找——见 PROJECT_HANDOFF.md 架构改造。
-   */
   const currentBlock = computed<PresetBlock | null>(() => {
     const tab = tabsStore.activeTab
     if (!tab || tab.domain !== 'block') return null
@@ -354,24 +351,14 @@ export const usePresetStore = defineStore('main', () => {
   }
 
   async function createPreset(name: string) {
-    const source = presetName.value ? ST.getPresetByName(presetName.value) : null
-    const blank: PresetData = source ?? { prompts: [], prompt_order: [{ character_id: 100001, order: [] }] }
-    blank.prompts = []
-    if (!Array.isArray(blank.prompt_order)) blank.prompt_order = [{ character_id: 100001, order: [] }]
-    else {
-      let entry = blank.prompt_order.find((p: any) => p.character_id === 100001)
-      if (!entry) {
-        entry = { character_id: 100001, order: [] }
-        blank.prompt_order.push(entry)
-      } else {
-        entry.order = []
-      }
-    }
-    if (blank.extensions) blank.extensions.regex_scripts = []
+    refreshPresetList()
+    if (presetList.value.some(p => p.name === name)) { showToast(t('shared.toast.duplicatePresetName')); return }
+
+    const newPreset: PresetData = JSON.parse(JSON.stringify(DEFAULT_PRESET))
     try {
-      await ST.savePresetAs(name, blank)
+      await ST.savePresetAs(name, newPreset)
       refreshPresetList()
-      applyLoadedPreset(blank, name)
+      applyLoadedPreset(newPreset, name)
       showToast(t('shared.toast.created', { name }))
     } catch (e: any) { showToast(t('shared.toast.createFailed', { msg: e?.message || e })) }
   }
