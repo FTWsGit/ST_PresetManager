@@ -99,6 +99,7 @@ export default {
   'shared.toast.renderedFullPrompt': 'Rendered full prompt',
   'shared.toast.renderedBlocks': 'Rendered {count} block(s)',
   'shared.toast.cannotDeleteMarker': 'Can not delete Marker',
+  'shared.toast.cannotHideMarker': 'Can not hide Marker',
   'shared.toast.selectPresetFailed': 'Failed to select preset in ST Main Menu, shown data might be incorrect',
 
   // ---- shared.confirm ----

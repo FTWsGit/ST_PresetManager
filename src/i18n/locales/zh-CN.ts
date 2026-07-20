@@ -98,7 +98,8 @@ export default {
   'shared.toast.previewFailed': '预览失败：{msg}',
   'shared.toast.renderedFullPrompt': '已渲染完整提示词',
   'shared.toast.renderedBlocks': '已渲染 {count} 个块',
-  'shared.toast.cannotDeleteMarker': '不能删除Marker块',
+  'shared.toast.cannotDeleteMarker': '不能删除Marker',
+  'shared.toast.cannotHideMarker': '不能隐藏Marker',
   'shared.toast.selectPresetFailed': '切换ST主菜单预设失败，可能导致显示数据不精确',
 
   // ---- shared.confirm：通用确认弹窗 ----

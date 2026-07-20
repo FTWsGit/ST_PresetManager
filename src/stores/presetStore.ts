@@ -479,6 +479,11 @@ export const usePresetStore = defineStore('main', () => {
     const idx = node.parentIdx
     if (!node.isGroup) {
       const id = (node.ref as OrderItem).identifier
+      const block = prompts.value.find(p => p.identifier === id)
+      if (block?.marker) {
+        showToast(t('shared.toast.cannotHideMarker'))
+        return
+      }
       tabsStore.close('block', id)
     }
     parent.splice(idx, 1)
