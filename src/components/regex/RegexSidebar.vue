@@ -29,8 +29,9 @@
 </template>
 
 <script setup lang="ts">
-import { watch, nextTick } from 'vue'
+import { watch } from 'vue'
 import { useDragReorder } from '../../composables/useDragReorder'
+import { useListScrollSync } from '../../composables/useListScrollSync'
 import { usePanelResize } from '../../composables/usePanelResize'
 import { usePresetStore } from '../../stores/presetStore'
 import { useTabsStore } from '../../stores/tabsStore'
@@ -47,7 +48,7 @@ const props = defineProps<{ mobileDrawerOpen?: boolean }>()
 const confirmStore = useConfirmStore()
 const store = usePresetStore()
 const tabsStore = useTabsStore()
-const { dragIdx, dragOverIdx, dragOverPos, setItemRef, onItemMouseDown, consumeSuppressClick, scrollItemIntoView } = useDragReorder()
+const { dragIdx, dragOverIdx, dragOverPos, itemEls, setItemRef, onItemMouseDown, consumeSuppressClick } = useDragReorder()
 
 function onAdd() {
   const id = store.addRegexScript()
@@ -76,15 +77,17 @@ function onDragStart(i: number, e: PointerEvent) {
 }
 
 // Scroll the active regex item into view whenever something asks for it (TabBar click, this
-// list's own click, or anything else that goes through tabsStore.open()/focus()) — mirrors
-// BlockSidebar.vue's scrollSelectedIntoView(), generalized via tabsStore's per-domain token. See
-// tabsStore.ts's doc comment on listScrollToken.
-watch(() => tabsStore.listScrollToken['regex'], () => {
-  nextTick(() => {
-    if (!tabsStore.activeTab || tabsStore.activeTab.domain !== 'regex') return
-    const idx = store.regexScripts.findIndex(r => r.id === tabsStore.activeTab!.key)
-    if (idx >= 0) scrollItemIntoView(idx)
-  })
+// list's own click, or anything else that goes through tabsStore.open()/focus()) — see
+// useListScrollSync.ts's doc comment. itemEls (from useDragReorder) is keyed by list index, so
+// keyOf resolves activeTab.key (a script id) back to that index — same lookup this file used to
+// do inline before scrolling.
+useListScrollSync({
+  domain: 'regex',
+  itemEls,
+  keyOf: () => {
+    const idx = store.regexScripts.findIndex(r => r.id === tabsStore.activeTab?.key)
+    return idx >= 0 ? idx : null
+  },
 })
 
 const resize = usePanelResize({

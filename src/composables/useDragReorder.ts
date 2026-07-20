@@ -7,6 +7,9 @@ export function useDragReorder() {
   const dragIdx = ref<number | null>(null)
   const dragOverIdx = ref(-1)
   const dragOverPos = ref<'top' | 'bottom'>('top')
+  /** Exposed (not just used internally by scrollItemIntoView) so callers can hand this same map
+   *  to useListScrollSync — one map, one source of truth for "which DOM element is item i",
+   *  rather than each composable keeping its own parallel map that could drift out of sync. */
   const itemEls = new Map<number, HTMLElement>()
   let suppressClick = false
 
@@ -84,5 +87,5 @@ export function useDragReorder() {
     if (suppressClick) { suppressClick = false; return true }
     return false
   }
-  return { dragIdx, dragOverIdx, dragOverPos, setItemRef, onItemMouseDown, consumeSuppressClick, scrollItemIntoView }
+  return { dragIdx, dragOverIdx, dragOverPos, itemEls, setItemRef, onItemMouseDown, consumeSuppressClick, scrollItemIntoView }
 }

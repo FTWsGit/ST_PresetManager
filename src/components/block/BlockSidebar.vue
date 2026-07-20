@@ -82,6 +82,7 @@ import { usePanelResize } from '../../composables/usePanelResize'
 import { getHostDocument, getHostWindow } from '../../composables/hostEnv'
 import { roleClass as roleClassOf } from '../../utils'
 import { useTabsStore } from '../../stores/tabsStore'
+import { useListScrollSync } from '../../composables/useListScrollSync'
 import ListToolbar from '../shared/ListToolbar.vue'
 
 // Explicit prop rather than relying on Vue's automatic class/attr fallthrough from the parent:
@@ -100,14 +101,6 @@ const dragIdx = ref<number | null>(null)
 const dragOverIdx = ref(-1)
 const dragOverPos = ref<'top' | 'bottom'>('top')
 let dragScrollRAF: number | null = null
-
-// 当前激活标签对应的 gi（视觉下标），用于侧边栏高亮/滚动/解绑分组
-// 当激活标签不是 block 域时，返回 -1（不高亮任何行），和 RegexSidebar 行为一致
-const activeGi = computed(() => {
-  const tab = tabsStore.activeTab
-  if (tab?.domain !== 'block') return -1
-  return store.identifierToGi(tab.key)
-})
 
 const canBind = computed(() => {
   const topLevel = Array.from(store.selectedGi).filter(gi =>
@@ -237,23 +230,29 @@ const resize = usePanelResize({
 function onResizeStart(e: PointerEvent) { resize.onPointerDown(e) }
 watch(() => resize.active.value, (v) => { if (!v) store.saveSettings() })
 
-/* ---- Scroll selected item into view on jump requests ----
-   Watches tabsStore's per-domain scroll token (tick on any 'block' tab open()/focus(), plus
-   presetStore.ts's search/var-nav jumps calling tabsStore.requestListScroll('block') directly) —
-   see tabsStore.ts's doc comment on listScrollToken. RegexSidebar.vue watches the same
-   mechanism under its own 'regex' key. */
+/* ---- Scroll active item into view on jump requests ----
+   Previously scrolled to `store.selectedGi`'s smallest member — wrong once selectedGi and
+   activeTab were split into independent state (see sidebar-refactor-report.md 一): clicking an
+   already-open TabBar tab ticks the scroll token without touching selectedGi, so that logic
+   scrolled to a stale selection instead of the tab that was just focused. useListScrollSync
+   resolves the target from activeTab.key instead — the same basis RegexSidebar.vue always used
+   — via identifierToGi(), the existing one-way "identifier -> gi" lookup (also used by
+   revealAndFindGi). See useListScrollSync.ts's doc comment. */
 const itemEls = new Map<number, HTMLElement>()
 function setItemRef(el: any, i: number) {
   if (el) itemEls.set(i, el as HTMLElement)
   else itemEls.delete(i)
 }
-function scrollSelectedIntoView() {
-  // 滚动到第一个选中的元素
-  const firstGi = Array.from(store.selectedGi).sort((a, b) => a - b)[0]
-  const el = itemEls.get(firstGi)
-  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-}
-watch(() => tabsStore.listScrollToken['block'], () => { nextTick(scrollSelectedIntoView) })
+useListScrollSync({
+  domain: 'block',
+  itemEls,
+  keyOf: () => {
+    const tab = tabsStore.activeTab
+    if (!tab) return null
+    const gi = store.identifierToGi(tab.key)
+    return gi >= 0 ? gi : null
+  },
+})
 
 /* ---- Drag and drop ----
    NOTE: this used to be native HTML5 DnD (draggable="true" + dragstart/dragover/drop). That
