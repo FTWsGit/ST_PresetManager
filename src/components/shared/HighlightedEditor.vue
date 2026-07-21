@@ -107,10 +107,10 @@ const measureRef = ref<HTMLDivElement>()
 // `timeout` option). Lower = catches up sooner under sustained heavy typing, at the cost of
 // competing more with input rendering; higher = stays out of the way longer, but the highlighted
 // view can lag further behind while typing continuously.
-const RENDER_IDLE_TIMEOUT_MS = 30
+const RENDER_IDLE_TIMEOUT_MS = 10
 // RESIZE_DEBOUNCE_MS: how long to wait after the editor's size last changed (e.g. mid-drag on
 // the sidebar/var-nav/preview width handles) before re-measuring line-wrap.
-const RESIZE_DEBOUNCE_MS = 100
+const RESIZE_DEBOUNCE_MS = 20
 
 const content = ref(props.modelValue)
 const cursorLine = ref(1)
