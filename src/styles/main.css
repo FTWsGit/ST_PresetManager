@@ -336,7 +336,7 @@
 .pm-preview-panel{background:var(--pm-bg-e);border-left:1px solid rgba(200,149,74,.25);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;position:relative}
 .pm-preview-panel.float{position:absolute;right:0;top:0;bottom:0;z-index:60;box-shadow:-8px 0 40px rgba(0,0,0,.55)}
 .st-pm .pp-tools{padding:10px 16px;border-bottom:1px solid var(--pm-border);flex-shrink:0}
-.st-pm .pp-output-wrap{flex:1;overflow:auto;padding:16px}
+.st-pm .pp-output-wrap{flex:1;overflow:auto;padding:8px}
 .st-pm .pb-body .phl,.st-pm .pp-raw .phl{background:rgba(200,149,74,.22);color:var(--pm-ac-h);border-radius:2px;padding:0 2px}
 
 /* Mode tabs (Per-Block vs Full Text) */
@@ -348,7 +348,7 @@
 .st-pm .pp-error{font-size:12px;color:var(--pm-dg);background:var(--pm-dg-d);border-radius:var(--pm-rs);padding:6px 10px;margin-top:8px;line-height:1.5}
 
 /* Preview blocks — one card per prompt block, separated & collapsible */
-.st-pm .pb-block{margin-bottom:14px;background:var(--pm-bg);border:1px solid var(--pm-border);border-radius:var(--pm-r);overflow:hidden}
+.st-pm .pb-block{margin-bottom:6px;background:var(--pm-bg);border:1px solid var(--pm-border);border-radius:var(--pm-r);overflow:hidden}
 .st-pm .pb-header{font-size:13px;font-weight:700;padding:10px 14px;border-bottom:1px solid rgba(40,42,58,.6);display:flex;gap:8px;align-items:center;cursor:pointer;transition:background var(--pm-tr);background:var(--pm-bg)}
 .st-pm .pb-header:hover{background:var(--pm-bg-h)}
 .st-pm .pb-role{text-transform:uppercase;letter-spacing:.04em;font-size:12px;padding:2px 7px;border-radius:3px}
