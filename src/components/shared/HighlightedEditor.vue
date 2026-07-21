@@ -97,7 +97,6 @@ const emit = defineEmits<{
 const taRef = ref<HTMLTextAreaElement>()
 const hlRef = ref<HTMLPreElement>()
 const lnRef = ref<HTMLElement>()
-const editorWrap = ref<HTMLElement>()
 const mirrorRef = ref<HTMLDivElement>()
 const measureRef = ref<HTMLDivElement>()
 
@@ -202,6 +201,14 @@ function updateLineNums() {
   const text = content.value
   const cs = getComputedStyle(ta) // safe: resolves off the live element itself, not a global
   const cw = ta.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+  // .pm-editor-ta is overflow-y:auto (scrollbar reserved once content overflows vertically,
+  // shrinking clientWidth) but .pm-editor-hl (the colored text you actually see) is
+  // overflow:hidden and, left to its own CSS width:100%, never loses that width — so once a
+  // scrollbar appears the visible layer wraps later than the real textarea underneath it,
+  // and the gap grows with every wrapped line below that point. Forcing the same clientWidth
+  // here every time (same technique already used for the measure/mirror elements below) keeps
+  // the two layers' wrap points identical regardless of scrollbar state.
+  if (hlRef.value) hlRef.value.style.width = ta.clientWidth + 'px'
   if (text === lastLNText && cw === lastLNWidth) return // nothing that would change wrapping has changed
   lastLNText = text; lastLNWidth = cw
   if (cw <= 0) { lineHeights.value = []; return }

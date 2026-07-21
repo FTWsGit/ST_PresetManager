@@ -150,17 +150,34 @@ export const usePresetStore = defineStore('main', () => {
   }
 
   /* ====== Dirty tracking (drives the `*` on the header Save button) ======
-   * A single deep watcher on `prompts`/`order` covers every mutation path — direct block-content
-   * edits from Editor.vue's v-model-style bindings, and every explicit block/group op below
-   * (add/delete/hide/reorder/bind/unbind) that pushes/splices those same reactive arrays —
-   * without needing a `markDirty()` call sprinkled into each one individually.
+   * `order`/`regexScripts` stay deep-watched: every explicit block/group op below (add/delete/
+   * hide/reorder/bind/unbind/toggle) and every regex script field (scriptName/findRegex/...)
+   * mutates one of these two, and both arrays are small (order = top-level items/groups count,
+   * regexScripts = a handful of scripts) — deep-watching them costs Vue a full traverse() of a
+   * small tree per mutation, cheap enough to not sprinkle markDirty() calls everywhere.
+   *
+   * `prompts` is watched WITHOUT deep instead — it holds every block's full content string, and
+   * a deep watcher re-traverses the ENTIRE array (every block, every field) on every single
+   * mutation it sees, including a nested one. Since block content is edited character-by-
+   * character (BlockContentEditor.vue's v-model), a deep watch here meant every keystroke paid
+   * for a full-preset traversal — the real cause of the "text appears in chunks" typing lag
+   * (see PROJECT.md), nothing to do with the editor's own idle-callback scheduling.
+   * A non-deep watch on a ref-wrapped array still fires on top-level mutations (push/splice/
+   * reassignment) — i.e. add/delete/duplicate block — for free. It does NOT fire when a nested
+   * field (content/name/role) on an existing element changes, so those few call sites mark dirty
+   * explicitly via markDirty()/`dirty.value = true` right where they mutate: BlockContentEditor.
+   * vue's content setter, BlockSettingsForm.vue's name/role handlers, BlockSidebar.vue's inline
+   * rename commit, and replaceCurrent()/replaceAll() below.
+   *
    * The only wrinkle: assigning a freshly-loaded preset's data into `prompts`/`order` in
-   * applyLoadedPreset() looks exactly like "a change" to this same watcher, so it fires and
-   * marks dirty too. applyLoadedPreset() clears it back via nextTick() right after — Vue flushes
+   * applyLoadedPreset() looks exactly like "a change" to these same watchers, so they fire and
+   * mark dirty too. applyLoadedPreset() clears it back via nextTick() right after — Vue flushes
    * watchers queued by that assignment before that nextTick callback runs, so the flag always
    * ends up correctly false once the load has fully settled. */
   const dirty = ref(false)
-  watch([prompts, order, regexScripts], () => { dirty.value = true }, { deep: true })
+  function markDirty() { dirty.value = true }
+  watch([order, regexScripts], markDirty, { deep: true })
+  watch(prompts, markDirty)
 
   /* ====== Search ====== */
   const searchOpen = ref(false)
@@ -674,6 +691,7 @@ export const usePresetStore = defineStore('main', () => {
     const line = ls[r.line] || ''
     ls[r.line] = line.substring(0, r.col) + searchReplace.value + line.substring(r.col + r.ml)
     p.content = ls.join('\n')
+    markDirty() // nested field mutation — the shallow `prompts` watch above won't catch this
     doSearch()
     showToast(t('shared.toast.replaced1'))
   }
@@ -684,7 +702,7 @@ export const usePresetStore = defineStore('main', () => {
     prompts.value.forEach(p => {
       if (!p.content) return
       const pts = p.content.split(q)
-      if (pts.length > 1) { cnt += pts.length - 1; p.content = pts.join(searchReplace.value) }
+      if (pts.length > 1) { cnt += pts.length - 1; p.content = pts.join(searchReplace.value); markDirty() }
     })
     doSearch()
     showToast(`Replaced ${cnt}`)
@@ -922,7 +940,7 @@ export const usePresetStore = defineStore('main', () => {
     previewOpen, previewMode, previewLoading, previewError,
     previewCollapsed, previewBlockGroups, previewRawText,
     regexScripts, addRegexScript, deleteRegexScript, reorderRegexScript,
-    settingsOpen, hiddenOpen, copyPanelOpen, dirty,
+    settingsOpen, hiddenOpen, copyPanelOpen, dirty, markDirty,
     currentBlock, hasData, hiddenBlocks,
     editorJump, requestEditorJump,
     loadFromContext, doSavePreset, refreshPresetList, switchPreset, createPreset, removeCurrentPreset, reloadPreset,

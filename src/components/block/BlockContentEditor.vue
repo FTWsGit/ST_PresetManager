@@ -42,7 +42,10 @@ const editorRef = ref<InstanceType<typeof HighlightedEditor>>()
 
 const content = computed<string>({
   get: () => store.currentBlock?.content ?? '',
-  set: (v) => { if (store.currentBlock) store.currentBlock.content = v },
+  // markDirty(): `prompts` is now watched shallowly (see presetStore.ts's dirty-tracking
+  // comment) precisely because this setter is the hot path — deep-watching content edits meant
+  // a full-preset traverse() on every keystroke. This one explicit call replaces that.
+  set: (v) => { if (store.currentBlock) { store.currentBlock.content = v; store.markDirty() } },
 })
 
 // Hide any open var-popup whenever the active block tab changes — a stray popup pointing at the

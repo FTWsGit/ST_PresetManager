@@ -83,8 +83,11 @@ function setSurfaceMode(mode: 'display' | 'prompt' | 'both') {
   script.value.markdownOnly = mode === 'display' || mode === 'both'
   script.value.promptOnly = mode === 'prompt' || mode === 'both'
 }
-// 名字改了，同步一下已开标签的显示文字，不然标签栏上的名字和这里改完的对不上
+// 名字改了，同步一下已开标签的显示文字，不然标签栏上的名字和这里改完的对不上。用
+// renameTab() 而不是 open()：这里逐字触发，open() 会顺带 requestListScroll()（侧边栏
+// scrollIntoView smooth），每敲一个字都跑一次会跟输入渲染抢主线程，是可感知的卡顿——
+// 见 PROJECT.md「已知问题」。renameTab() 只改标签文字，没有这个副作用。
 watch(() => script.value?.scriptName, (name) => {
-  if (script.value && name !== undefined) tabsStore.open({ domain: 'regex', key: script.value.id, label: name || store.t('common.unnamed') })
+  if (script.value && name !== undefined) tabsStore.renameTab('regex', script.value.id, name || store.t('common.unnamed'))
 })
 </script>

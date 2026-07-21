@@ -192,7 +192,12 @@ const {
     if (!node || node.isGroup) return
     const item = node.ref as OrderItem
     const p = store.prompts.find(pp => pp.identifier === item.identifier)
-    if (p) p.name = newName
+    if (!p) return
+    p.name = newName
+    store.markDirty() // nested field mutation — the shallow `prompts` watch won't catch this
+    // BlockSettingsForm.vue has an equivalent watch, but it's unmounted whenever the settings
+    // dock is closed (see SettingsDock.vue's v-if) — can't rely on it running, so sync directly.
+    tabsStore.renameTab('block', item.identifier, newName || item.identifier)
   },
 })
 function setBlockNameInput(el: any, _gi: number) { setBlockNameInputRaw(el) }

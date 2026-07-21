@@ -88,6 +88,16 @@ export const useTabsStore = defineStore('tabs', () => {
     if (closingActive) activeId.value = tabs.value[0] ? tabId(tabs.value[0]) : null
   }
 
+  /** 只同步某个标签的显示文字，不改 activeId、不触发 requestListScroll——用于"底层数据被
+   *  改名了，如果它的标签正开着就把文字同步一下"这种场景（block/regex 改名输入框，逐字触发）。
+   *  故意跟 open() 分开：open() 语义是"用户刚导航到这里"，理应顺带滚动侧边栏；改名不是导航，
+   *  每敲一个字都顺带触发一次 scrollIntoView({behavior:'smooth'}) 会跟输入渲染抢主线程，
+   *  是 PROJECT.md 里记录过的卡顿根因之一。标签没开着就是个静默 no-op。 */
+  function renameTab(domain: string, key: string, label: string) {
+    const t = tabs.value.find(x => tabId(x) === domain + ':' + key)
+    if (t) t.label = label
+  }
+
   function focus(domain: string, key: string) {
     const id = domain + ':' + key
     if (tabs.value.some(t => tabId(t) === id)) {
@@ -101,5 +111,5 @@ export const useTabsStore = defineStore('tabs', () => {
   }
 
 
-  return { tabs, activeId, activeTab, open, close, closeAll, closeDomain, focus, isOpen, sidebarMode, setSidebarMode, settingsDockOpen, toggleSettingsDock, listScrollToken, requestListScroll }
+  return { tabs, activeId, activeTab, open, renameTab, close, closeAll, closeDomain, focus, isOpen, sidebarMode, setSidebarMode, settingsDockOpen, toggleSettingsDock, listScrollToken, requestListScroll }
 })
