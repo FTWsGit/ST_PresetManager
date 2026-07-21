@@ -430,7 +430,6 @@ export const usePresetStore = defineStore('main', () => {
     )
     selectedGi.value = next.selected
     anchorGi.value = next.anchor ?? -1
-    tabsStore.requestListScroll('block')
   }
   function addBlock() {
     if (!rawData.value) { showToast(t('shared.toast.loadPresetFirst')); return }
