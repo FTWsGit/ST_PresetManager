@@ -79,12 +79,12 @@ import { ref, computed, watch } from 'vue'
 import { usePresetStore } from '../../stores/presetStore'
 import type { OrderItem, OrderGroup, FlatNode } from '../../types'
 import { usePanelResize } from '../../composables/usePanelResize'
-import { getHostWindow } from '../../composables/hostEnv'
 import { roleClass as roleClassOf } from '../../utils'
 import { useTabsStore } from '../../stores/tabsStore'
 import { useListScrollSync } from '../../composables/useListScrollSync'
 import { useDragReorder } from '../../composables/useDragReorder'
 import { useInlineRename } from '../../composables/useInlineRename'
+import { useListSelection } from '../../composables/useListSelection'
 import ListToolbar from '../shared/ListToolbar.vue'
 
 // Explicit prop rather than relying on Vue's automatic class/attr fallthrough from the parent:
@@ -103,9 +103,9 @@ const listRef = ref<HTMLElement>()
 // Drag-to-reorder mechanics (pointer tracking, auto-scroll-near-edge, throttled drag-over calc,
 // text-selection suppression) all live in useDragReorder now — see its module doc comment. What
 // stays here is block-specific: the group-insert semantics interpretation of onDrop's
-// (from, to, after) (handled entirely inside store.reorderBlock, unchanged) and the long-press
-// multi-select gesture below (a different interaction from dragging, not migrated yet — see
-// sidebar-refactor-report.md 四.3/四.4, this is useListSelection.ts's job later).
+// (from, to, after), handled entirely inside store.reorderBlock (unchanged, see
+// sidebar-refactor-report.md 四.3 on why that stays out of the composable). The long-press
+// multi-select gesture is a separate interaction, wired up further down via useListSelection.
 const {
   dragIdx, dragOverIdx, dragOverPos, itemEls,
   setItemRef,
@@ -276,100 +276,51 @@ function onDragDrop(from: number, to: number, after: boolean) {
 // scrolling", but nothing outside the handle is touch-action-restricted, so normal list scrolling
 // is untouched everywhere else in the row.
 //
-// The long-press-to-multi-select gesture below is a SEPARATE interaction from dragging (it only
-// fires for touch/pen off the drag handle, where useDragReorder's own onItemMouseDown
-// deliberately does nothing — see its doc comment), so it stays local here rather than moving
-// into useDragReorder. It's still domain-agnostic in principle (nothing here is block-specific)
-// and is the next thing to extract, into useListSelection.ts — see sidebar-refactor-report.md
-// 四.3/四.4, which calls this out as the highest-risk step precisely because this gesture touches
-// store-level selection state (store.selectBlock/store.anchorGi), not local component state.
-const DRAG_THRESHOLD = 4
-const LONG_PRESS_MS = 200
-let suppressClick = false
-let longPressTimer: ReturnType<typeof setTimeout> | null = null
-
-function cancelLongPress() {
-  if (longPressTimer) {
-    clearTimeout(longPressTimer)
-    longPressTimer = null
-  }
-}
+// The long-press-to-multi-select gesture (touch/pen off the drag handle, where useDragReorder's
+// own onItemMouseDown deliberately does nothing — see its doc comment) and the click dispatch
+// below both go through useListSelection now — one recognizer for "which selection gesture is
+// this" shared by mouse and touch, dispatching into a single onSelect handler. See
+// useListSelection.ts's doc comment for why the actual state transition (applyMultiSelect for
+// ctrl/shift, via store.selectBlock; a bespoke always-select-this-row rule for plain clicks) stays
+// here rather than moving into the composable.
+const listSelection = useListSelection<number>({
+  onSelect: (mode, gi) => {
+    if (mode !== 'single') {
+      // Ctrl/Cmd+Click, Shift+Click, and long-press (dispatched as 'ctrl' — see
+      // useListSelection.ts) all go through the store's existing applyMultiSelect-backed
+      // selectBlock(), which is also called from outside this sidebar (search/var-nav jumps), so
+      // it stays the one implementation of that state transition.
+      store.selectBlock(gi, { ctrl: mode === 'ctrl', shift: mode === 'shift' })
+      return
+    }
+    // 普通点击/长按之外的单击：清空多选，选中当前行，设置锚点，打开标签/切换折叠
+    store.selectedGi.clear()
+    store.selectedGi.add(gi) // 表面高亮完全对应 selectedGi，不再有 activeGi 干扰
+    store.anchorGi = gi
+    const node = store.flatNodes[gi]
+    if (!node) return
+    if (node.isGroup) {
+      // 点击组标题：切换折叠状态
+      store.toggleGroupCollapse(gi)
+    } else {
+      const item = node.ref as OrderItem
+      const block = store.prompts.find(p => p.identifier === item.identifier)
+      tabsStore.open({ domain: 'block', key: item.identifier, label: block?.name || item.identifier })
+    }
+  },
+})
 
 function onItemMouseDown(i: number, e: PointerEvent) {
-  if (e.pointerType !== 'mouse' && !(e.target as HTMLElement).closest('.pm-drag-handle')) {
-    // touch/pen off the handle — long-press to multi-select, scroll otherwise.
-    // We don't start a drag here (the browser's native scroll should win), but we DO
-    // watch for a hold: if the finger stays within DRAG_THRESHOLD for LONG_PRESS_MS,
-    // we treat it as a Ctrl+Click toggle (multi-select). Moving past the threshold
-    // cancels the timer and lets the browser handle it as a normal scroll gesture.
-    const hostWin = getHostWindow()
-    const startX = e.clientX
-    const startY = e.clientY
-    const pointerId = e.pointerId
-
-    function onMove(ev: PointerEvent) {
-      if (ev.pointerId !== pointerId) return
-      if (Math.abs(ev.clientX - startX) > DRAG_THRESHOLD || Math.abs(ev.clientY - startY) > DRAG_THRESHOLD) {
-        cancelLongPress()
-        hostWin.removeEventListener('pointermove', onMove)
-        hostWin.removeEventListener('pointerup', onUp)
-        hostWin.removeEventListener('pointercancel', onUp)
-      }
-    }
-
-    function onUp(ev: PointerEvent) {
-      if (ev.pointerId !== pointerId) return
-      cancelLongPress()
-      hostWin.removeEventListener('pointermove', onMove)
-      hostWin.removeEventListener('pointerup', onUp)
-      hostWin.removeEventListener('pointercancel', onUp)
-    }
-
-    hostWin.addEventListener('pointermove', onMove)
-    hostWin.addEventListener('pointerup', onUp)
-    hostWin.addEventListener('pointercancel', onUp)
-
-    longPressTimer = setTimeout(() => {
-      longPressTimer = null
-      store.selectBlock(i, { ctrl: true })
-      store.anchorGi = i
-      if (navigator.vibrate) navigator.vibrate(40)
-      suppressClick = true
-    }, LONG_PRESS_MS)
-    return
-  }
-
+  // Touch/pen off the drag handle: claimed for long-press tracking, nothing else to do here.
+  if (listSelection.onPointerDown(i, e)) return
   // Mouse, or touch/pen that landed on the drag handle — hand off entirely to useDragReorder.
   onDragPointerDown(i, e, onDragDrop)
 }
 
 function onItemClick(gi: number, e: MouseEvent) {
   if (consumeDragSuppressClick()) return
-  if (suppressClick) { suppressClick = false; return }
-  const node = store.flatNodes[gi]
-  if (!node) return
-
-  // 标准多选交互：
-  // - Ctrl/Cmd+Click: 切换单个选中状态
-  // - Shift+Click: 范围选中（基于上次点击的锚点）
-  // - 普通点击: 清空多选，选中当前行，打开标签/切换折叠
-  if (e.ctrlKey || e.metaKey || e.shiftKey) {
-    store.selectBlock(gi, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey })
-    return
-  }
-
-  // 普通点击：清空多选，选中当前行，设置锚点，打开标签/切换折叠
-  store.selectedGi.clear()
-  store.selectedGi.add(gi) // 表面高亮完全对应 selectedGi，不再有 activeGi 干扰
-  store.anchorGi = gi
-
-  if (node.isGroup) {
-    // 点击组标题：切换折叠状态
-    store.toggleGroupCollapse(gi)
-  } else {
-    const item = node.ref as OrderItem
-    const block = store.prompts.find(p => p.identifier === item.identifier)
-    tabsStore.open({ domain: 'block', key: item.identifier, label: block?.name || item.identifier })
-  }
+  if (listSelection.consumeSuppressClick()) return
+  if (!store.flatNodes[gi]) return
+  listSelection.onClick(gi, e)
 }
 </script>
