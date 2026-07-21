@@ -293,14 +293,20 @@ const listSelection = useListSelection<number>({
       store.selectBlock(gi, { ctrl: mode === 'ctrl', shift: mode === 'shift' })
       return
     }
-    // 普通点击/长按之外的单击：清空多选，选中当前行，设置锚点，打开标签/切换折叠
-    store.selectedGi.clear()
-    store.selectedGi.add(gi) // 表面高亮完全对应 selectedGi，不再有 activeGi 干扰
-    store.anchorGi = gi
+    // 普通点击/长按之外的单击：选中当前行，打开标签/切换折叠
     const node = store.flatNodes[gi]
     if (!node) return
+    // Set locally rather than relying solely on presetStore's watch on tabsStore.activeTab:
+    // that watcher only fires when the active tab identity actually changes, so re-clicking a row
+    // that's ALREADY the active tab (e.g. to collapse a ctrl-multi-selection back down to just
+    // this row) wouldn't otherwise reset the highlight. When this click DOES also change the
+    // active tab, the watcher fires too and computes the identical value — harmless overlap, not
+    // a second source of truth for a different case (see presetStore.ts's doc comment there).
+    store.selectedGi.clear()
+    store.selectedGi.add(gi)
+    store.anchorGi = gi
     if (node.isGroup) {
-      // 点击组标题：切换折叠状态
+      // 点击组标题：切换折叠状态（组没有 tab，高亮只能靠上面这几行本地设置）
       store.toggleGroupCollapse(gi)
     } else {
       const item = node.ref as OrderItem

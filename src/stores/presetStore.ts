@@ -65,6 +65,48 @@ export const usePresetStore = defineStore('main', () => {
     return flatNodes.value.findIndex(n => !n.isGroup && (n.ref as OrderItem).identifier === identifier)
   }
 
+  /** Single source of truth for "the active block tab drives the sidebar": whenever the active
+   *  tab actually changes to a block, this expands whatever collapsed group contains it (via
+   *  revealAndFindGi) and highlights it (selectedGi/anchorGi) to just that one row — covers
+   *  search-result click, var-nav click, and TabBar click, which all go through
+   *  tabsStore.open()/focus() to get there.
+   *
+   *  MUST key off `tabsStore.activeTab` itself (a reference that only changes when the active tab
+   *  identity actually changes), NOT off `listScrollToken['block']`: selectBlock() (the
+   *  ctrl/shift multi-select path) also calls requestListScroll('block') — to get the newly
+   *  (multi-)selected row scrolled into view — without ever touching activeId. Keying this watcher
+   *  off that same token meant every ctrl/shift-click immediately got its own just-computed
+   *  selectedGi clobbered back down to a single-row selection derived from whatever tab happened
+   *  to still be open. Watching activeTab avoids that entirely, since multi-select never changes
+   *  it.
+   *
+   *  Trade-off: re-clicking a row that's already the active tab won't re-fire this (activeId
+   *  doesn't change, so the computed doesn't invalidate) — BlockSidebar.vue's plain-click handler
+   *  still sets selectedGi/anchorGi locally itself to cover exactly that case (a plain click's job
+   *  is "select exactly this row" regardless of whether it was already open); when it also
+   *  changes the active tab, this watcher fires too and computes the identical value, which is
+   *  harmless, not a second source of truth for a genuinely different case.
+   *
+   *  Scrolling itself stays separate, in useListScrollSync.ts on the sidebar side — it needs the
+   *  rendered itemEls DOM map, which is a component-layer concern this store has no business
+   *  owning; open()/focus() trigger that via requestListScroll() same as always.
+   *
+   *  `flush: 'sync'` so this resolves before useListScrollSync's watcher (also triggered off
+   *  open()/focus(), via requestListScroll) tries to read flatNodes — otherwise a same-tick race
+   *  could have it compute gi against a still-collapsed group and scroll to nothing. */
+  watch(() => tabsStore.activeTab, (tab) => {
+    if (!tab || tab.domain !== 'block') return
+    const gi = revealAndFindGi(tab.key)
+    if (gi < 0) return
+    // Idempotency guard: avoid handing the sidebar's v-for a new Set reference (and a re-render)
+    // when the highlight wouldn't actually change — same "only touch the ref when the effective
+    // value actually changes" reasoning as useDragReorder.ts's rAF-throttled updateDragOver.
+    // useDragReorder.ts's rAF-throttled updateDragOver.
+    if (anchorGi.value === gi && selectedGi.value.size === 1 && selectedGi.value.has(gi)) return
+    selectedGi.value = new Set([gi])
+    anchorGi.value = gi
+  }, { immediate: true, flush: 'sync' })
+
 
 
   /* ====== UI State ====== */
@@ -613,8 +655,8 @@ export const usePresetStore = defineStore('main', () => {
     if (i < 0 || i >= searchResults.value.length) return
     searchIdx.value = i
     const r = searchResults.value[i]
-    revealAndFindGi(r.blockId) // 自动展开折叠组
-    // 直接打开标签——编辑器内容由标签驱动
+    // 直接打开标签——编辑器内容、展开折叠组、侧边栏高亮全部由标签驱动（见 revealAndFindGi 上方
+    // 那个 watch(tabsStore.activeTab, ...)），这里不用再手动 revealAndFindGi 一次
     const block = prompts.value.find(p => p.identifier === r.blockId)
     tabsStore.open({ domain: 'block', key: r.blockId, label: block?.name || r.blockName })
     requestEditorJump(r.line, r.col, r.ml, false)
@@ -700,7 +742,7 @@ export const usePresetStore = defineStore('main', () => {
     if (i < 0 || i >= filteredVarOps.value.length) return
     varIdx.value = i
     const v = filteredVarOps.value[i]
-    revealAndFindGi(v.blockId) // 自动展开折叠组
+    // 展开折叠组、侧边栏高亮由 tabsStore.open() 触发的 activeTab watcher 统一处理，见 revealAndFindGi 上方
     const block = prompts.value.find(p => p.identifier === v.blockId)
     tabsStore.open({ domain: 'block', key: v.blockId, label: block?.name || v.blockName })
     requestEditorJump(v.line, v.col, v.varName.length)
@@ -765,7 +807,7 @@ export const usePresetStore = defineStore('main', () => {
     if (i < 0 || i >= varPopupOps.value.length) return
     varPopupIdx.value = i
     const v = varPopupOps.value[i]
-    revealAndFindGi(v.blockId) // 自动展开折叠组
+    // 展开折叠组、侧边栏高亮由 tabsStore.open() 触发的 activeTab watcher 统一处理，见 revealAndFindGi 上方
     const block = prompts.value.find(p => p.identifier === v.blockId)
     tabsStore.open({ domain: 'block', key: v.blockId, label: block?.name || v.blockName })
     requestEditorJump(v.line, v.col, v.varName.length)
