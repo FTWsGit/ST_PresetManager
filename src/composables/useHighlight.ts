@@ -92,7 +92,7 @@ function scan(text: string, start: number, minTier: Tier, stopChar: string | nul
   while (i < text.length) {
     if (stopChar !== null && text[i] === stopChar) {
       // word-boundary check for the closing single-quote, mirroring the original regex's (?!\w)
-      if (stopChar === "'" && /\w/.test(text[i + 1] || '')) { i++; continue }
+      if ((stopChar === "'" || stopChar === '\u2019') && /\w/.test(text[i + 1] || '')) { i++; continue }
       flushPlain(i)
       return { tokens: out, endIndex: i }
     }
@@ -129,6 +129,44 @@ function scan(text: string, start: number, minTier: Tier, stopChar: string | nul
         flushPlain(i)
         out.push({ text: '[', cls: 'hl-sb' }, ...inner.tokens, { text: ']', cls: 'hl-sb' })
         i = inner.endIndex + 1; plainStart = i
+        continue
+      }
+    }
+
+    // Tier 1: 中文双引号 “...” — 颜色同英文双引号
+    if (minTier <= 1 && text[i] === '\u201C') {  // U+201C = “
+      const cls = 'hl-dq'
+      const inner = scan(text, i + 1, 2, '\u201D', cls)  // stopChar = ” (U+201D)
+      if (inner.endIndex < text.length && text[inner.endIndex] === '\u201D') {
+        flushPlain(i)
+        out.push({ text: '\u201C', cls }, ...inner.tokens, { text: '\u201D', cls })
+        i = inner.endIndex + 1
+        plainStart = i
+        continue
+      }
+    }
+
+    // Tier 1: 中文单引号 ‘...’ — 颜色同英文单引号
+    if (minTier <= 1 && text[i] === '\u2018') {  // U+2018 = ‘
+      const cls = 'hl-sq'
+      const inner = scan(text, i + 1, 2, '\u2019', cls)  // stopChar = ’ (U+2019)
+      if (inner.endIndex < text.length && text[inner.endIndex] === '\u2019') {
+        flushPlain(i)
+        out.push({ text: '\u2018', cls }, ...inner.tokens, { text: '\u2019', cls })
+        i = inner.endIndex + 1
+        plainStart = i
+        continue
+      }
+    }
+
+    if (minTier <= 1 && text[i] === '\u300C') { 
+      const cls = 'hl-dq' 
+      const inner = scan(text, i + 1, 2, '\u300D', cls)
+      if (inner.endIndex < text.length && text[inner.endIndex] === '\u300D') {
+        flushPlain(i)
+        out.push({ text: '\u300C', cls }, ...inner.tokens, { text: '\u300D', cls })
+        i = inner.endIndex + 1
+        plainStart = i
         continue
       }
     }
