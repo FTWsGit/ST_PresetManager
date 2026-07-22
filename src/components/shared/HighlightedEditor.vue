@@ -17,21 +17,24 @@
 
   v-model'd on `modelValue` (plain string). Content sync direction:
    - typing -> emits 'update:modelValue' on every keystroke (same frequency the old Editor.vue's
-     content ref did), debounced/idle-scheduled work (highlight, line numbers) happens internally,
-     never blocks the emit.
+     content ref did); highlight + line-number recompute run synchronously, same tick, no
+     debounce/idle deferral — both are diffed against their previous result and only touch the
+     DOM for what actually changed (see refreshHighlight() and updateLineNums() below), so the
+     per-keystroke cost is O(lines changed), not O(document length), and is cheap enough to not
+     need deferring.
    - `modelValue` changed FROM OUTSIDE (block switched, Replace All ran, regex tab switched) ->
-     detected by comparing against the component's own last-known value; refreshes immediately
-     (not idle-scheduled) since this isn't the typing hot path, and re-measures cursor position.
+     detected by comparing against the component's own last-known value; refreshes immediately,
+     and re-measures cursor position.
 -->
 <template>
-  <div class="pm-editor-content" ref="editorWrap">
+  <div class="pm-editor-content">
     <div class="pm-line-nums" ref="lnRef">
       <div v-for="(h, i) in lineHeights" :key="i" class="ln" :class="lineClass(i)" :style="{ height: h + 'px' }">{{ i + 1 }}</div>
     </div>
     <div class="pm-editor-wrap">
-      <pre class="pm-editor-hl" ref="hlRef" v-html="hlHtml"></pre>
+      <pre class="pm-editor-hl" ref="hlRef"></pre>
       <textarea class="pm-editor-ta" ref="taRef" spellcheck="false" :placeholder="placeholder"
-                :readonly="disabled"
+                :readonly="disabled" autocomplete="off" data-lpignore="true" data-form-type="other"
                 :value="content" @input="onInput" @scroll="syncScroll"
                 @keydown="onKeydown" @click="onClick" @keyup="updateCursor"></textarea>
       <!-- hidden mirror used to measure single-line height / caret coords (handles CJK / tabs / mixed width) -->
@@ -51,7 +54,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { highlightContent } from '../../composables/useHighlight'
+import { highlightLines } from '../../composables/useHighlight'
 import { getHostWindow, getHostDocument } from '../../composables/hostEnv'
 
 interface JumpRequest { line: number; col: number; len: number; token: number; keepFocus: boolean }
@@ -101,12 +104,6 @@ const mirrorRef = ref<HTMLDivElement>()
 const measureRef = ref<HTMLDivElement>()
 
 // ---- Tunable performance knobs ----
-// RENDER_IDLE_TIMEOUT_MS: the maximum time we'll let syntax-highlight/line-number recompute
-// wait for genuine browser idle time before forcing it to run anyway (requestIdleCallback's
-// `timeout` option). Lower = catches up sooner under sustained heavy typing, at the cost of
-// competing more with input rendering; higher = stays out of the way longer, but the highlighted
-// view can lag further behind while typing continuously.
-const RENDER_IDLE_TIMEOUT_MS = 10
 // RESIZE_DEBOUNCE_MS: how long to wait after the editor's size last changed (e.g. mid-drag on
 // the sidebar/var-nav/preview width handles) before re-measuring line-wrap.
 const RESIZE_DEBOUNCE_MS = 20
@@ -122,12 +119,48 @@ const linesLabel = computed(() => props.statusLinesLabel.replace(/\{count\}/g, S
 
 const lineHeights = ref<number[]>([])
 
-// Highlight — a manually-updated ref rather than a computed(), so its (comparatively expensive)
-// recompute + innerHTML patch can be coalesced into the same debounced/batched update as line
-// numbers and cursor position, instead of firing synchronously on every single keystroke.
-const hlHtml = ref('')
-function refreshHighlight() { hlHtml.value = highlightContent(content.value) + '\n' }
-refreshHighlight()
+// Highlight — bypass Vue's v-html diff entirely, AND patch only the lines that actually
+// changed instead of replacing the whole <pre>'s innerHTML on every keystroke.
+//
+// The old v-html approach meant Vue diffed/patched the entire <pre> tree on every keystroke,
+// which is O(n) in the number of highlight spans; going to direct innerHTML fixed the Vue-vdom
+// half of that cost, but a single `hlRef.value.innerHTML = ...` assignment is STILL an O(document
+// length) DOM write — the browser has to re-layout/re-paint the entire overlay, every keystroke,
+// regardless of how the highlighting itself was computed. For long/heavily-highlighted blocks
+// that write alone is what caused input to visibly lag behind the caret ("chunky" typing), and
+// is also why an earlier version of this file hid the overlay during typing (`.typing` CSS
+// class + TYPING_IDLE_MS deferral) — that traded the lag for "highlighting disappears while
+// typing, then flashes/re-lags once when it catches up", which is arguably worse.
+//
+// Fix: `highlightLines()` (composables/useHighlight.ts) returns the highlighted HTML split one
+// string per LOGICAL line (same indexing as `lineHeights` below). One <div> per logical line is
+// kept as a persistent child of the <pre>; on each refresh we diff the new per-line strings
+// against what's currently in the DOM and only touch `.innerHTML` on lines that actually
+// changed — typically exactly one, the line being edited. Every other line's DOM node is never
+// touched, so the browser has nothing to re-layout/re-paint there. This is the same principle
+// CodeMirror 5 uses for its own line rendering (view.changes marks only dirty lines; unmarked
+// lines' DOM nodes are reused untouched — see src/display/view_tracking.js/update_line.js in
+// the CM5 source) — ported here without needing CM5's own virtualized-viewport machinery, since
+// preset blocks are short enough that rendering all lines (not just visible ones) is fine.
+//
+// Because a single keystroke's DOM write is now O(lines changed) instead of O(document length),
+// there's no more need for the typing/idle-deferral dance: refreshHighlight() runs synchronously
+// on every input event (see onInput below), and the overlay never goes blank or flashes.
+let prevHlLines: string[] = []
+function refreshHighlight() {
+  const el = hlRef.value
+  if (!el) return
+  const lines = highlightLines(content.value)
+  const hostDoc = getHostDocument() // see updateLineNums() below — imperative nodes must come from the host document
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i] === prevHlLines[i]) continue // unchanged line — leave this <div> untouched
+    let child = el.children[i] as HTMLElement | undefined
+    if (!child) { child = hostDoc.createElement('div'); el.appendChild(child) }
+    child.innerHTML = lines[i]
+  }
+  while (el.children.length > lines.length) el.lastElementChild!.remove() // e.g. lines deleted
+  prevHlLines = lines
+}
 
 // External changes to modelValue (block switched, Replace All, regex tab switched, ...) —
 // detected because they don't match our own last-emitted value. Unlike the typing path, this
@@ -149,13 +182,18 @@ function onInput(e: Event) {
   if (props.disabled) return
   content.value = (e.target as HTMLTextAreaElement).value
   emit('update:modelValue', content.value)
-  scheduleRenderUpdate()
+  refreshHighlight() // now O(lines changed), safe to run on every keystroke — see refreshHighlight() above
+  updateLineNums() // already per-line-cached; steady-state typing only ever re-measures the edited line
+  updateCursor()
 }
 
+// Text changes made from onKeydown (Tab, bracket/quote auto-pairing) go through here instead of
+// onInput, since they mutate ta.value directly rather than going through a native input event.
 function emitContent() {
   content.value = taRef.value?.value || ''
   emit('update:modelValue', content.value)
-  scheduleRenderUpdate()
+  refreshHighlight()
+  updateLineNums()
 }
 
 // ---- Per-line wrapped-height measurement ----
@@ -250,32 +288,6 @@ function updateLineNums() {
     m.textContent = '' // drop all measurement children in one go
   }
   lineHeights.value = heights
-}
-
-// Schedules the (comparatively expensive, for big blocks) highlight + line-number + cursor
-// recompute for genuine browser idle time rather than "right before the next paint". rAF
-// callbacks run as part of the same rendering pipeline responsible for painting the character
-// you just typed — requestIdleCallback explicitly only runs after input/rendering work is
-// handled, so it can never compete with displaying what you just typed. (Safari doesn't
-// implement requestIdleCallback as of this writing, hence the setTimeout fallback.)
-const ric: (cb: () => void, opts?: { timeout: number }) => number =
-  (typeof (window as any).requestIdleCallback === 'function')
-    ? (window as any).requestIdleCallback.bind(window)
-    : ((cb: () => void) => setTimeout(cb, 1) as unknown as number)
-const cic: (id: number) => void =
-  (typeof (window as any).cancelIdleCallback === 'function')
-    ? (window as any).cancelIdleCallback.bind(window)
-    : ((id: number) => clearTimeout(id))
-
-let pendingIdle = 0
-function scheduleRenderUpdate() {
-  if (pendingIdle) return // already scheduled — will pick up the latest content.value when it runs
-  pendingIdle = ric(() => {
-    pendingIdle = 0
-    refreshHighlight()
-    updateLineNums()
-    updateCursor()
-  }, { timeout: RENDER_IDLE_TIMEOUT_MS })
 }
 
 // Scroll sync
@@ -464,9 +476,9 @@ onMounted(() => {
     roTimer = setTimeout(() => { updateLineNums() }, RESIZE_DEBOUNCE_MS)
   })
   if (taRef.value) ro!.observe(taRef.value)
-  nextTick(() => { updateLineNums(); updateCursor() })
+  nextTick(() => { refreshHighlight(); updateLineNums(); updateCursor() })
 })
-onUnmounted(() => { if (ro) ro.disconnect(); if (pendingIdle) cic(pendingIdle) })
+onUnmounted(() => { if (ro) ro.disconnect() })
 
 // Re-measure when the font CSS vars change (Settings dialog font-size/family). Unlike Editor.vue's
 // old version (which watched store.settings directly), this just re-measures on any resize of the
