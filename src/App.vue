@@ -303,11 +303,26 @@ function onHostResize() {
     store.saveSettings()
   }
 }
+
+function handleKeydown(e: KeyboardEvent) {
+  if (!store.panelOpen) return
+  
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault()
+    store.doSavePreset()
+  }
+}
+
+
 onMounted(() => {
   onHostResize()
   getHostWindow().addEventListener('resize', onHostResize)
+  getHostWindow().addEventListener('keydown', handleKeydown)
 })
-onUnmounted(() => getHostWindow().removeEventListener('resize', onHostResize))
+onUnmounted(() => {
+  getHostWindow().removeEventListener('resize', onHostResize)
+  getHostWindow().removeEventListener('keydown', handleKeydown)
+})
 
 function openPanel() {
   store.panelOpen = true

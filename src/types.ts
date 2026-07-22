@@ -107,7 +107,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   editorFontSize: 15,
-  editorFontFamily: 'JetBrains Mono',
+  editorFontFamily: 'Consolas',
   syntaxColors: {
     'hl-b': '#58b8c0', 'hl-k': '#a078c0', 'hl-s': '#555570',
     'hl-v': '#c8a045', 'hl-c': '#68b868', 'hl-cm': '#555570',
@@ -117,10 +117,10 @@ export const DEFAULT_SETTINGS: Settings = {
   sidebarWidth: 340,
   varPanelWidth: 360,
   previewWidth: 640,
-  varPanelFloat: false,
-  previewFloat: false, 
+  varPanelFloat: true,
+  previewFloat: true, 
   settingsDockWidth: 320,
-  settingsDockFloat: false,
+  settingsDockFloat: true,
   language: 'zh-CN',
   fabPos: null,
 }
@@ -132,6 +132,7 @@ export const DEFAULT_SETTINGS: Settings = {
 export const SEARCH_MAX = 200
 
 export const FONT_OPTIONS = [
+  { name: 'Consolas', value: "'Consolas',monospace" },
   { name: 'JetBrains Mono', value: "'JetBrains Mono','Fira Code',monospace" },
   { name: 'Fira Code', value: "'Fira Code',monospace" },
   { name: 'Source Code Pro', value: "'Source Code Pro',monospace" },

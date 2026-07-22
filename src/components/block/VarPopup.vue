@@ -1,7 +1,6 @@
 <template>
   <div v-if="store.varPopupOpen" class="pm-var-popup" :style="{ top: store.varPopupPos.top + 'px', left: store.varPopupPos.left + 'px' }">
     <div class="vp-header">
-      <span class="vp-icon">📌</span>
       <span class="vp-varname">{{ store.varPopupVarName }}</span>
       <span class="vp-count">{{ store.t(store.varPopupOps.length !== 1 ? 'block.varPopup.hit' : 'block.varPopup.hitSingle', { count: store.varPopupOps.length }) }}</span>
       <span class="vp-spacer"></span>
