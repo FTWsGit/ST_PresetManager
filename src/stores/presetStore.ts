@@ -3,7 +3,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import type { PresetData, PresetBlock, OrderItem, OrderGroup, OrderNode, FlatNode, SearchResult, VarOp, PreviewBlockGroup, RegexScript } from '../types'
 import * as ST from '../sillytavern'
 import type { PresetListEntry } from '../sillytavern'
-import { escRe, macroAwareDiff, applyMultiSelect } from '../utils'
+import { macroAwareDiff, applyMultiSelect, findVarOps } from '../utils'
 import { useUiState } from '../composables/useUiState'
 import { useTabsStore } from './tabsStore'
 import { useConfirmStore } from './confirmStore'
@@ -712,33 +712,17 @@ export const usePresetStore = defineStore('main', () => {
   function rebuildVarIndex() {
     allVarOps.value = []
     varIdx.value = -1
-    const re = /\{\{(setvar|addvar)::([\s\S]+?)::([\s\S]*?)\}\}|\{\{getvar::([\s\S]+?)\}\}/g
+    // findVarOps (utils.ts) is nesting-aware — unlike a naive regex, it correctly picks up var ops
+    // nested inside another setvar/addvar's value, e.g. {{setvar::a::...{{getvar::b}}...}}.
     prompts.value.forEach((p) => {
       const c = p.content || ''
-      let m: RegExpExecArray | null
-      re.lastIndex = 0
-      while ((m = re.exec(c)) !== null) {
-        const before = c.substring(0, m.index)
-        const lastNl = before.lastIndexOf('\n')
-        const line = (before.match(/\n/g) || []).length
-        if (m[1]) {
-          // {{ setvar/addvar :: varName :: ... }} -- varName starts after "{{" + type + "::"
-          const varStart = m.index + 2 + m[1].length + 2
-          allVarOps.value.push({
-            blockId: p.identifier, blockName: p.name || p.identifier,
-            type: m[1] as 'setvar' | 'addvar', varName: m[2].trim(),
-            varValue: m[3], line, col: varStart - lastNl - 1, pos: m.index, ordIdx: 0,
-          })
-        } else if (m[4]) {
-          // {{ getvar :: varName }} -- varName starts after "{{getvar::"
-          const varStart = m.index + 2 + 'getvar'.length + 2
-          allVarOps.value.push({
-            blockId: p.identifier, blockName: p.name || p.identifier,
-            type: 'get', varName: m[4].trim(), varValue: '',
-            line, col: varStart - lastNl - 1, pos: m.index, ordIdx: 0,
-          })
-        }
-      }
+      findVarOps(c).forEach((v) => {
+        allVarOps.value.push({
+          blockId: p.identifier, blockName: p.name || p.identifier,
+          type: v.type, varName: v.varName, varValue: v.varValue,
+          line: v.line, col: v.col, pos: v.pos, ordIdx: 0,
+        })
+      })
     })
     allVarOps.value.sort((a, b) =>
       a.varName.localeCompare(b.varName) ||
@@ -782,7 +766,10 @@ export const usePresetStore = defineStore('main', () => {
   function showVarPopup(varName: string, clickBlockId: string | null, clickPos: number, pos: { top: number; left: number }) {
     const ops: VarOp[] = []
     let currentIdx = -1
-    const re = new RegExp('\\{\\{(setvar|addvar)::' + escRe(varName) + '::([\\s\\S]*?)\\}\\}|\\{\\{getvar::' + escRe(varName) + '\\}\\}', 'g')
+    // findVarOps (utils.ts) is nesting-aware — unlike the old per-varName regex here, it correctly
+    // finds ops nested inside another setvar/addvar's value instead of mis-closing on the nested
+    // macro's own `}}`. We scan for ALL var ops in the block and filter down to `varName` here,
+    // since findVarOps has no notion of "only this variable".
     // The click always originates from the block currently open in the editor (that's the only
     // place enableVarClick is wired up), so we receive the block identifier directly.
     // Groups: scan order.value.flatMap (like generatePreviewBlocks) rather than flatNodes, since
@@ -793,21 +780,17 @@ export const usePresetStore = defineStore('main', () => {
       const p = prompts.value.find(pp => pp.identifier === o.identifier)
       if (!p) return
       const c = p.content || ''
-      let m: RegExpExecArray | null
-      re.lastIndex = 0
-      while ((m = re.exec(c)) !== null) {
-        const before = c.substring(0, m.index)
-        const lastNl = before.lastIndexOf('\n')
-        const line = (before.match(/\n/g) || []).length
-        const type = (m[1] as 'setvar' | 'addvar' | undefined) || 'get'
-        const varStart = type === 'get' ? m.index + 2 + 'getvar'.length + 2 : m.index + 2 + type.length + 2
+      findVarOps(c).filter(v => v.varName === varName).forEach((v) => {
         ops.push({
           blockId: p.identifier, blockName: p.name || p.identifier,
-          type, varName, varValue: m[2] || '',
-          line, col: varStart - lastNl - 1, pos: m.index, ordIdx: 0, // not a real index anymore (see comment above) — unused elsewhere, kept for shape compat with VarOp
+          type: v.type, varName, varValue: v.varValue,
+          line: v.line, col: v.col, pos: v.pos, ordIdx: 0, // not a real index anymore (see comment above) — unused elsewhere, kept for shape compat with VarOp
         })
-        if (p.identifier === clickBlockId && m.index <= clickPos && clickPos <= m.index + m[0].length) currentIdx = ops.length - 1
-      }
+        // clickPos falls anywhere within this macro's source span — for setvar/addvar that span can
+        // run over multiple lines and contain nested macros, so use findVarOps' nesting-aware `end`
+        // rather than assuming a single-line, non-nested match like the old regex did.
+        if (p.identifier === clickBlockId && v.pos <= clickPos && clickPos <= v.end) currentIdx = ops.length - 1
+      })
     })
     varPopupVarName.value = varName
     varPopupOps.value = ops

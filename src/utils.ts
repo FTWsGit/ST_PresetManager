@@ -80,7 +80,7 @@ export function debounce<T extends (...a: any[]) => void>(fn: T, ms: number): T 
  *  useHighlight.ts does for coloring — that version is tangled up with recursive tier-based
  *  highlighting concerns we don't need here, and importing it back would make utils.ts (a leaf
  *  module) depend on a component-level composable. Returns -1 if unmatched. */
-function findMacroEnd(text: string, start: number): number {
+export function findMacroEnd(text: string, start: number): number {
   let depth = 1, j = start + 2
   while (j < text.length && depth > 0) {
     if (text[j] === '{' && text[j + 1] === '{') { depth++; j += 2 }
@@ -114,6 +114,90 @@ export function stripMacros(text: string): string {
     }
     out += text[i]; i++
   }
+  return out
+}
+
+export interface VarOpMatch {
+  type: 'setvar' | 'addvar' | 'get'
+  varName: string
+  varValue: string
+  pos: number   // absolute index of this macro's opening `{{` in `text`
+  end: number   // absolute index right after this macro's TRUE (nesting-aware) closing `}}`
+  line: number  // 0-based
+  col: number   // 0-based, column of the variable name (not of `{{`) — matches VarOp's existing convention
+}
+
+/**
+ * Scan `text` for every `{{setvar/addvar/getvar}}` occurrence, INCLUDING ones nested inside
+ * another macro's value — e.g. `{{setvar::a::...{{getvar::b}}...}}`.
+ *
+ * A plain regex like `\{\{(setvar|addvar)::(...)::([\s\S]*?)\}\}` can't do this correctly: its
+ * value group is non-greedy, so it closes on the FIRST `}}` it encounters — which for a nested
+ * macro is the INNER macro's closing brace, not the outer one's. That truncates the outer value
+ * at the wrong point, AND the inner macro is never seen on the next `exec()` call either, since
+ * `lastIndex` already advanced past it as "part of" the (wrongly-closed) outer match.
+ *
+ * This walks `text` once, matching `{{`/`}}` depth-aware (same technique as findMacroEnd/
+ * stripMacros above) to find each macro's TRUE end regardless of nesting depth, then recurses
+ * into a setvar/addvar's value (and defensively into any other macro's body) to pick up whatever
+ * var ops are nested inside. Used by presetStore.ts's rebuildVarIndex (Var Nav panel) and
+ * showVarPopup (click-a-variable popup) — both used to rely on the naive regex above and so both
+ * silently dropped/mangled var ops nested inside another setvar/addvar's value.
+ */
+export function findVarOps(text: string): VarOpMatch[] {
+  const out: VarOpMatch[] = []
+
+  function lineColOf(bracePos: number, nameStart: number) {
+    const before = text.slice(0, bracePos)
+    const line = (before.match(/\n/g) || []).length
+    const lastNl = before.lastIndexOf('\n')
+    return { line, col: nameStart - lastNl - 1 }
+  }
+
+  function scan(from: number, to: number) {
+    let i = from
+    while (i < to) {
+      if (text[i] === '{' && text[i + 1] === '{') {
+        const end = findMacroEnd(text, i)
+        if (end === -1 || end > to) { i++; continue } // unmatched (or dangling past our range) — treat as literal
+        const innerStart = i + 2
+        const innerEnd = end - 2 // start of the closing `}}`
+        const inner = text.slice(innerStart, innerEnd)
+
+        let matchedVarOp = false
+        for (const type of ['setvar', 'addvar'] as const) {
+          const prefix = type + '::'
+          if (inner.startsWith(prefix)) {
+            const after = innerStart + prefix.length
+            const sep = text.indexOf('::', after)
+            if (sep !== -1 && sep < innerEnd) {
+              const varName = text.slice(after, sep).trim()
+              const valueStart = sep + 2
+              const { line, col } = lineColOf(i, after)
+              out.push({ type, varName, varValue: text.slice(valueStart, innerEnd), pos: i, end, line, col })
+              scan(valueStart, innerEnd) // pick up var ops nested inside this setvar/addvar's own value
+              matchedVarOp = true
+            }
+            break
+          }
+        }
+        if (!matchedVarOp && inner.startsWith('getvar::')) {
+          const after = innerStart + 'getvar::'.length
+          const varName = text.slice(after, innerEnd).trim()
+          const { line, col } = lineColOf(i, after)
+          out.push({ type: 'get', varName, varValue: '', pos: i, end, line, col })
+          matchedVarOp = true
+        }
+        if (!matchedVarOp) scan(innerStart, innerEnd) // some other macro — var ops could still be nested in its args
+
+        i = end
+        continue
+      }
+      i++
+    }
+  }
+
+  scan(0, text.length)
   return out
 }
 

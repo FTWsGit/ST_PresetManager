@@ -56,6 +56,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { highlightLines } from '../../composables/useHighlight'
 import { getHostWindow, getHostDocument } from '../../composables/hostEnv'
+import { findMacroEnd } from '../../utils'
 
 interface JumpRequest { line: number; col: number; len: number; token: number; keepFocus: boolean }
 
@@ -329,39 +330,47 @@ function moveCursorTo(line: number, col: number, len: number, keepFocus = false)
 
 // Var click → locate the {{setvar/addvar/getvar::name}} token under the click, but only when
 // the click lands precisely on the variable NAME itself (not the keyword, braces, or a setvar's
-// value). Ported from Editor.vue's original getVarNameAtPos, unchanged.
+// value) — EXCEPT when that value itself contains another {{setvar/addvar/getvar}}, in which case
+// we recurse into it, so clicking a var name nested inside another macro's value (e.g.
+// {{addvar::a::...{{getvar::b}}...}}) still resolves to the inner `b`, not a dead end at `a`.
+// Uses findMacroEnd (utils.ts, `{{`/`}}` depth counting) to find each macro's TRUE end regardless
+// of nesting — a naive scan that just looks for the next `}}` would misidentify a nested macro's
+// closing brace as the outer macro's own, same class of bug fixed in utils.ts's findVarOps.
 function getVarNameAtPos(text: string, pos: number): { varName: string; type: string; pos: number } | null {
-  let depth = 0, os = -1, ois = -1, i = 0
-  while (i < text.length) {
-    if (i + 1 < text.length && text[i] === '{' && text[i + 1] === '{') {
-      if (depth === 0) { os = i; ois = i + 2 }
-      depth++; i += 2
-    } else if (i + 1 < text.length && text[i] === '}' && text[i + 1] === '}') {
-      depth--
-      if (depth === 0 && os >= 0) {
-        const me = i + 2
-        if (pos >= os && pos <= me) {
-          const inner = text.substring(ois, i)
-          const sm = inner.match(/^(setvar|addvar)::([\s\S]+?)::([\s\S]*)$/)
+  function scan(from: number, to: number): { varName: string; type: string; pos: number } | null {
+    let i = from
+    while (i < to) {
+      if (i + 1 < text.length && text[i] === '{' && text[i + 1] === '{') {
+        const end = findMacroEnd(text, i)
+        if (end === -1 || end > to) { i++; continue }
+        if (pos >= i && pos <= end) {
+          const innerStart = i + 2, innerEnd = end - 2
+          const inner = text.slice(innerStart, innerEnd)
+          const sm = inner.match(/^(setvar|addvar)::([\s\S]+?)::/)
           if (sm) {
-            const vs = os + 2 + sm[1].length + 2
-            if (pos >= vs && pos < vs + sm[2].length) return { varName: sm[2], type: sm[1], pos: os }
-            return null
+            const vs = innerStart + sm[1].length + 2
+            const varName = sm[2]
+            if (pos >= vs && pos < vs + varName.length) return { varName, type: sm[1], pos: i }
+            // Not on the outer macro's own varName — a nested var macro could still be in its value.
+            return scan(vs + varName.length + 2, innerEnd)
           }
           const gm = inner.match(/^getvar::([\s\S]+)$/)
           if (gm) {
-            const vs = os + 10 // "{{" + "getvar::".length
-            if (pos >= vs && pos < vs + gm[1].length) return { varName: gm[1], type: 'get', pos: os }
+            const vs = innerStart + 'getvar::'.length
+            if (pos >= vs && pos < vs + gm[1].length) return { varName: gm[1], type: 'get', pos: i }
             return null
           }
-          return null
+          // Not a var macro itself (e.g. {{user}}, {{roll::1d6}}) — a var macro could be nested in its args.
+          return scan(innerStart, innerEnd)
         }
-        os = -1
+        i = end
+        continue
       }
-      i += 2
-    } else i++
+      i++
+    }
+    return null
   }
-  return null
+  return scan(0, text.length)
 }
 
 // Finds the on-screen (viewport) coordinates of a given character offset within the textarea,
