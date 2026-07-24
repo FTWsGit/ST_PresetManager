@@ -16,15 +16,15 @@
             <button class="pm-btn accent" @click="store.doSavePreset()">{{ store.t('shared.header.save', { star: store.dirty ? ' *' : '' }) }}</button>
             <div class="pm-sep"></div>
             <button class="pm-btn" @click="store.reloadPreset()">{{ store.t('shared.header.reload') }}</button>
-            <button class="pm-btn" @click="store.copyPanelOpen = true">{{ store.t('shared.header.copyBlocks') }}</button>
+            <button class="pm-btn" @click="store.settingsOpen = true">{{ store.t('shared.header.settings') }}</button>
             <div class="pm-sep"></div>
             <div class="pm-mode-switch">
               <button class="pm-btn sm" :class="{ active: tabsStore.sidebarMode === 'block' }" @click="tabsStore.setSidebarMode('block')">{{ store.t('shared.header.mode.block') }}</button>
               <button class="pm-btn sm" :class="{ active: tabsStore.sidebarMode === 'regex' }" @click="tabsStore.setSidebarMode('regex')">{{ store.t('shared.header.mode.regex') }}</button>
             </div>
             <div class="pm-sep"></div>
+            <button class="pm-btn" @click="store.copyPanelOpen = true">{{ store.t('shared.header.copyBlocks') }}</button>
             <button class="pm-btn" :class="{ active: store.searchOpen }" @click="toggleSearch">{{ store.t('shared.header.search') }}</button>
-            <button class="pm-btn" @click="store.settingsOpen = true">{{ store.t('shared.header.settings') }}</button>
             <div class="pm-spacer"></div>
             <button class="pm-btn" :class="{ active: store.varNavOpen }" @click="store.varNavOpen = !store.varNavOpen">{{ store.t('shared.header.varNav') }}</button>
             <button class="pm-btn" :class="{ active: store.previewOpen }" @click="store.previewOpen = !store.previewOpen">{{ store.t('shared.header.preview') }}</button>
